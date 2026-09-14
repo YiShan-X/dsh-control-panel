@@ -24,6 +24,57 @@ import {
   warmDshWebCache,
 } from '../src/core/dsh.mjs';
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Create a real, executable stand-in for the `dsh` CLI and point the panel at
+ * it, so the lifecycle tests exercise the actual spawn path instead of a mock.
+ *
+ * Written per platform because that is the whole point: the Windows form is a
+ * `.cmd` shim, which is exactly the shape that could not be spawned at all, and
+ * the POSIX form is a shell script. Both record that they ran, which is how a
+ * test can tell "spawn reported success" from "the program actually executed".
+ *
+ * @returns {{dir: string, env: string, marker: string, restore: () => void}}
+ */
+function makeFakeDsh() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-fakedsh-'));
+  const script = path.join(dir, 'fake-cli.mjs');
+  const marker = path.join(dir, 'ran.txt');
+  fs.writeFileSync(script, `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(' '));\n`, 'utf8');
+
+  let env;
+  if (process.platform === 'win32') {
+    const cmd = path.join(dir, 'dsh.cmd');
+    // The npm shim shape: `%_prog%` chosen by an IF, then program + script.
+    fs.writeFileSync(cmd, [
+      '@ECHO off',
+      'SETLOCAL',
+      `"${process.execPath}" "${script}" %*`,
+      '',
+    ].join('\r\n'), 'utf8');
+    env = `"${cmd}"`;
+  } else {
+    const sh = path.join(dir, 'dsh');
+    fs.writeFileSync(sh, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, 'utf8');
+    fs.chmodSync(sh, 0o755);
+    env = sh;
+  }
+
+  const before = process.env.DSH_WEB_CMD;
+  process.env.DSH_WEB_CMD = `${env} web`;
+  return {
+    dir,
+    env,
+    marker,
+    restore: () => {
+      if (before === undefined) delete process.env.DSH_WEB_CMD;
+      else process.env.DSH_WEB_CMD = before;
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
 describe('spawnable executables', () => {
   /*
    * The DSH tab's Start button shipped broken with `spawn dsh ENOENT`: `dsh` is
@@ -100,6 +151,38 @@ describe('spawnable executables', () => {
   it('refuses a shim it does not understand', () => {
     assert.equal(parseNpmShim('@ECHO off\r\nREM nothing useful here\r\n', 'C:\\x'), null);
     assert.equal(unwrapNpmShim('/usr/local/bin/dsh.cmd', 'linux'), null);
+  });
+
+  it('resolves the shim\'s `_prog=node` branch from PATH', { skip: process.platform !== 'win32' }, () => {
+    /*
+     * After a version-manager switch there is no `node.exe` next to the shim, so
+     * npm's IF takes the ELSE branch and the program token is a bare `node` that
+     * must be resolved from PATH. The earlier version of this parser turned that
+     * into `null` -- shim understood, launch impossible.
+     */
+    const text = [
+      '@ECHO off',
+      'SETLOCAL',
+      'IF EXIST "%dp0%\\node.exe" (',
+      '  SET "_prog=%dp0%\\node.exe"',
+      ') ELSE (',
+      '  SET "_prog=node"',
+      ')',
+      'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\entry.js" %*',
+    ].join('\r\n');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-nopath-'));
+    try {
+      const entry = path.join(dir, 'entry.js');
+      fs.writeFileSync(entry, '// entry\n', 'utf8');
+
+      const parsed = parseNpmShim(text, dir);
+      assert.ok(parsed, 'a shim without a bundled node.exe must still be understood');
+      assert.ok(fs.existsSync(parsed.command), `${parsed.command} should exist`);
+      assert.deepEqual(parsed.prefixArgs, [entry]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('picks a launchable file out of a where-listing', () => {
@@ -242,31 +325,47 @@ describe('dsh web process model', () => {
 describe('dsh web lifecycle', () => {
   const proc = { pid: 111, cmdline: '"C:\\node.exe" dsh web', startedAt: null, cpuMs: null, rssBytes: null };
 
-  it('starts from scratch and reports whether it actually came up', async () => {
-    const spawned = [];
-    let live = null;
-    const result = await startDshWeb({
-      find: () => live,
-      spawn: (cmd) => { spawned.push(cmd); live = { ...proc, pid: 222 }; return 222; },
-      settleMs: 1,
-    });
-    assert.deepEqual(spawned, ['dsh web']);
-    assert.equal(result.changed, true);
-    assert.equal(result.newPid, 222);
-    assert.equal(result.alive, true);
-    assert.equal(result.livePid, 222);
+  it('starts from scratch by actually running the command', async () => {
+    /*
+     * A real spawn, not a mock. `startDshWeb` resolves its executable before
+     * launching, so a mocked spawn would test the mock's PATH assumptions
+     * rather than the launch path -- which is exactly how this suite passed on
+     * Windows and failed on Ubuntu, where `dsh` is not installed.
+     */
+    const fake = makeFakeDsh();
+    try {
+      let live = null;
+      const result = await startDshWeb({
+        find: () => live,
+        settleMs: 250,
+      });
+      assert.equal(result.changed, true);
+      assert.equal(result.alive, false, 'nothing is registered in the fake process table');
+
+      // The stronger claim: the program really executed.
+      await sleep(400);
+      assert.ok(fs.existsSync(fake.marker), 'the launched command should have run');
+      assert.equal(fs.readFileSync(fake.marker, 'utf8').trim(), 'web');
+    } finally {
+      fake.restore();
+    }
   });
 
   it('reports a start that never became a process', async () => {
-    const result = await startDshWeb({
-      find: () => null,
-      spawn: () => 333,
-      settleMs: 1,
-    });
-    assert.equal(result.changed, true);
-    assert.equal(result.newPid, 333);
-    assert.equal(result.alive, false);
-    assert.equal(result.livePid, null);
+    const fake = makeFakeDsh();
+    try {
+      const result = await startDshWeb({
+        find: () => null,
+        spawn: () => 333,
+        settleMs: 1,
+      });
+      assert.equal(result.changed, true);
+      assert.equal(result.newPid, 333);
+      assert.equal(result.alive, false);
+      assert.equal(result.livePid, null);
+    } finally {
+      fake.restore();
+    }
   });
 
   it('is a no-op when the service is already running', async () => {
@@ -305,30 +404,40 @@ describe('dsh web lifecycle', () => {
   });
 
   it('falls back when the captured command no longer resolves', async () => {
-    // A switched Node version manager leaves the old absolute path behind.
-    const stale = { ...proc, cmdline: '"C:\\nvm4w\\old\\node.exe" dsh web --port 3080' };
-    const spawned = [];
-    const result = await restartDshWeb({
-      find: () => stale,
-      spawn: (cmd) => { spawned.push(cmd); return 445; },
-      alive: () => false,
-      settleMs: 1,
-    });
-    assert.equal(result.commandFellBack, true);
-    assert.equal(result.capturedCommand, stale.cmdline);
-    assert.notEqual(spawned[0], stale.cmdline, 'a dead executable must not be replayed');
+    const fake = makeFakeDsh();
+    try {
+      // A switched Node version manager leaves the old absolute path behind.
+      const stale = { ...proc, cmdline: '"C:\\nvm4w\\old\\node.exe" dsh web --port 3080' };
+      const spawned = [];
+      const result = await restartDshWeb({
+        find: () => stale,
+        spawn: (cmd) => { spawned.push(cmd); return 445; },
+        alive: () => false,
+        settleMs: 1,
+      });
+      assert.equal(result.commandFellBack, true);
+      assert.equal(result.capturedCommand, stale.cmdline);
+      assert.notEqual(spawned[0], stale.cmdline, 'a dead executable must not be replayed');
+    } finally {
+      fake.restore();
+    }
   });
 
   it('degrades a restart of nothing into a plain start', async () => {
-    let live = null;
-    const result = await restartDshWeb({
-      find: () => live,
-      spawn: () => { live = { ...proc, pid: 555 }; return 555; },
-      settleMs: 1,
-    });
-    assert.equal(result.changed, true);
-    assert.equal(result.killedPid, null);
-    assert.equal(result.newPid, 555);
+    const fake = makeFakeDsh();
+    try {
+      let live = null;
+      const result = await restartDshWeb({
+        find: () => live,
+        spawn: () => { live = { ...proc, pid: 555 }; return 555; },
+        settleMs: 1,
+      });
+      assert.equal(result.changed, true);
+      assert.equal(result.killedPid, null);
+      assert.equal(result.newPid, 555);
+    } finally {
+      fake.restore();
+    }
   });
 
   it('reports the command the Start button would run', () => {
