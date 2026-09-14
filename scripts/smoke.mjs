@@ -11,14 +11,13 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { electronBinary } from './electron-binary.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // `electron` resolves to the platform launcher through node_modules/.bin, but
 // on Windows that is a .cmd shim. Point at the real binary instead.
-const electronBin = process.platform === 'win32'
-  ? path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-  : path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron');
+const electronBin = await electronBinary();
 
 const args = ['.'];
 if (process.platform === 'linux' && process.env.CI) {

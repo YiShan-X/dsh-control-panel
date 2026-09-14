@@ -21,7 +21,10 @@
     "url": "git+https://github.com/YiShan-X/dsh-control-panel.git"
   },
   "license": "MIT",
-  "author": "YiShan-X",
+  "author": {
+    "name": "YiShan-X",
+    "email": "80139158+YiShan-X@users.noreply.github.com"
+  },
   "type": "module",
   "main": "src/desktop/main.mjs",
   "bin": {
@@ -51,7 +54,7 @@
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
+    "electron": "^44.3.0",
     "electron-builder": "^26.0.0"
   },
   "build": {
@@ -131,6 +134,8 @@
       "icon": "build/icon.png",
       "category": "Development",
       "synopsis": "Toggle DSH skills and MCP servers",
+      "desktopName": "io.github.yishan-x.dsh-control-panel.desktop",
+      "syncDesktopName": true,
       "target": [
         {
           "target": "AppImage",

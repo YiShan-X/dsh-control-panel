@@ -63,7 +63,7 @@ Grab the installer for your platform from
 |---|---|
 | Windows | `dsh-control-panel-<version>-x64-setup.exe` (`-arm64-setup.exe` also available), or `dsh-control-panel-<version>-portable.exe` |
 | macOS | `dsh-control-panel-<version>-x64.dmg` / `-arm64.dmg` |
-| Linux | `dsh-control-panel-<version>-x64.AppImage` or `.deb` |
+| Linux | `dsh-control-panel-<version>-x86_64.AppImage` or `-amd64.deb` |
 
 > The builds are unsigned. Windows SmartScreen and macOS Gatekeeper will warn
 > you about an unknown developer; that is expected for a project without a

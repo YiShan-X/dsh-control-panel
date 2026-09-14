@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { electronBinary } from './electron-binary.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TARGET = path.resolve(ROOT, process.argv[2] || 'docs/screenshot.png');
@@ -152,9 +153,7 @@ function buildSandbox(lang, target) {
   };
 }
 
-const ELECTRON_BIN = process.platform === 'win32'
-  ? path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-  : path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron');
+const ELECTRON_BIN = await electronBinary();
 
 /** Run one capture set, resolving when Electron exits. */
 function captureOnce({ lang, file }) {

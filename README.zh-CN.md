@@ -54,7 +54,7 @@ skill 根目录，加/删条目会触发 catalog 重建，下一次请求立刻�
 |---|---|
 | Windows | `dsh-control-panel-<version>-x64-setup.exe`（另有 `-arm64-setup.exe`），或免安装版 `dsh-control-panel-<version>-portable.exe` |
 | macOS | `dsh-control-panel-<version>-x64.dmg` / `-arm64.dmg` |
-| Linux | `dsh-control-panel-<version>-x64.AppImage` 或 `.deb` |
+| Linux | `dsh-control-panel-<version>-x86_64.AppImage` 或 `-amd64.deb` |
 
 > 构建产物未做代码签名，Windows SmartScreen 与 macOS Gatekeeper 会提示未知开发者。
 > 这是没有签名证书的项目的正常现象。介意的话可以从源码构建。
