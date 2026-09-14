@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-09-14
+
+Documentation and positioning only -- no behaviour change in the app.
+
+### Added
+
+- A README section stating precisely how this tool differs from the other DSH
+  managers, and from the cc-switch <-> DSH cluster in particular: most of those
+  move *provider* data (base URLs, model routes, API keys) or perform a one-time
+  *import*, while this tool soft-routes the *same* pool directory by link and
+  never touches providers or keys.
+- A top-of-README note that the cc-switch integration is the headline feature
+  for people already running cc-switch, and an equally explicit note that
+  cc-switch is optional, so people without it do not self-select out.
+
+### Changed
+
+- The repository description and topics now name cc-switch, so the project is
+  findable from the hub it routes rather than only from "DSH panel".
+
 ## [1.0.0] - 2026-09-14
 
 The first public release. The panel grew out of a local-only script; this

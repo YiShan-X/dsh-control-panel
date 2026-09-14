@@ -8,6 +8,11 @@
 A desktop app that shows you what your DSH agent pays for on **every single
 model request** — and lets you switch the expensive parts off.
 
+If you already run [cc-switch](https://github.com/farion1231/cc-switch), this is
+the DSH half of it: your existing skill pool is **soft-routed** to DSH by link,
+not imported by copy. No cc-switch? Everything still works — see
+[How this differs](#how-this-differs-from-the-other-dsh-tools).
+
 English · [简体中文](README.zh-CN.md)
 
 ![Skills tab](docs/screenshot.png)
@@ -49,6 +54,58 @@ see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the experiment.
 reload, so the panel instead *tells you* when a restart is genuinely pending — it
 compares the patch file's mtime against the running `dsh web` process start time.
 If you have not changed anything, it stays quiet.
+
+---
+
+## How this differs from the other DSH tools
+
+DSH already has several skills/MCP managers, and a cluster of projects that
+connect cc-switch to DSH. It is worth being precise about which gap this fills,
+because most of that cluster is solving a different problem.
+
+**Most cc-switch ↔ DSH tools move *provider* data** — base URLs, model routes,
+API keys ([`dsh-cc-switch`](https://github.com/LKRCharon/dsh-cc-switch),
+[`dsh-llm-cc-switch`](https://github.com/Hoemr/dsh-llm-cc-switch),
+[`dsh-ccswitch-lite`](https://github.com/jk666T/dsh-ccswitch-lite)). This tool
+does not touch providers, models or keys at all. It manages the two things that
+ride on *every* request: skills and MCP servers.
+
+**The genuinely close comparison is import versus soft-routing.** Tools that
+"import from cc-switch" copy definitions into DSH. This tool never copies a
+skill — it links to the same directory on disk:
+
+| | Import | This tool |
+|---|---|---|
+| What lands in DSH | a copy of the definition | a link to the *same* folder |
+| You edit the pool later | changes do not propagate | live on the next request |
+| Copies to keep in sync | two | one |
+| Turning a skill off | must find and remove the copy | removes the link, pool untouched |
+
+One skill, one copy on disk, and cc-switch and DSH are both looking at it. There
+is nothing to re-sync, so there is nothing to drift.
+
+Three consequences of that choice, each of which is a deliberate trade:
+
+- **cc-switch is optional, not a dependency.** It is a read-only *source*. Without
+  it you keep per-skill switching over your own pools and full MCP toggle plus
+  parking; you only lose one-click generation of a brand-new MCP block from a
+  stored definition. Most DSH users have no cc-switch, and the app should not
+  pretend otherwise.
+- **It never writes to cc-switch.** Its database is opened `readOnly: true` and
+  cc-switch has no `enabled_dsh` column, so faking one would mean forking it.
+  DSH's own on/off state lives in DSH's own files, where DSH actually looks.
+- **It is a standalone desktop app, not a DSH settings-page plugin.** That buys a
+  window, tray-less native menus and installers, at the cost of not being
+  embedded in DSH's own UI.
+
+**What this tool is not**: it does not meter real token spend. The counts here
+are estimates of the *fixed* catalog cost per request, computed as characters /
+3.5, and they exist so you can compare orders of magnitude and decide what to
+switch off. For usage accounting there are dedicated tools.
+
+If you are evaluating the field,
+[`awesome-deepseek-harness`](https://github.com/Dominic789654/awesome-deepseek-harness)
+indexes most of it.
 
 ---
 

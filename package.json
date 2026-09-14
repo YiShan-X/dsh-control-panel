@@ -1,6 +1,6 @@
 {
   "name": "dsh-control-panel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop control panel for DSH: toggle the skills and MCP servers that cost tokens on every model request.",
   "keywords": [
     "dsh",

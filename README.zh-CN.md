@@ -8,6 +8,10 @@
 
 一个桌面软件，让你看清 DSH 在**每一次模型请求**上为哪些东西付了钱，并把用不上的部分关掉。
 
+如果你已经在用 [cc-switch](https://github.com/farion1231/cc-switch)，这就是它缺的 DSH 那一半：
+你现有的 skill 池是被**软路由**给 DSH 的（建链接，不是复制导入）。没装 cc-switch？功能照旧 ——
+见[它和 DSH 生态里其它工具的区别](#它和-dsh-生态里其它工具的区别)。
+
 ![Skills 标签页](docs/zh/screenshot.png)
 
 ---
@@ -41,6 +45,50 @@ skill 根目录，加/删条目会触发 catalog 重建，下一次请求立刻�
 **MCP 为什么不行**：MCP 是装配层，`dsh web` 启动时读一次组合，没有热加载。
 所以面板改成**主动告诉你**是否真的有未生效的改动——它把 patch 文件的 mtime 与
 正在运行的 `dsh web` 进程启动时间做比较。没改过就不会瞎报警。
+
+---
+
+## 它和 DSH 生态里其它工具的区别
+
+DSH 周边已经有好几个 skills/MCP 管理器，也有一批把 cc-switch 接到 DSH 的项目。
+值得说清楚本工具填的是哪个坑，因为其中大多数其实在解决另一个问题。
+
+**大部分 cc-switch ↔ DSH 项目搬的是「供应商」数据**——baseURL、模型路由、API key
+（[`dsh-cc-switch`](https://github.com/LKRCharon/dsh-cc-switch)、
+[`dsh-llm-cc-switch`](https://github.com/Hoemr/dsh-llm-cc-switch)、
+[`dsh-ccswitch-lite`](https://github.com/jk666T/dsh-ccswitch-lite)）。
+本工具完全不碰供应商、模型和 key，它管的是**每次请求都要付费**的那两样：skills 与 MCP。
+
+**真正相近的对比，是「导入」与「软路由」之别。** 号称"从 cc-switch 导入"的工具会把
+定义**复制**进 DSH；本工具从不复制任何 skill，它链接到磁盘上同一个目录：
+
+| | 导入 | 本工具 |
+|---|---|---|
+| 进入 DSH 的东西 | 定义的一份副本 | 指向**同一个**文件夹的链接 |
+| 之后你改了池子里的内容 | 不会同步 | 下一次请求即生效 |
+| 需要保持同步的副本数 | 两份 | 一份 |
+| 关掉一个 skill | 得找到并删掉那份副本 | 删掉链接，池内文件原封不动 |
+
+一个 skill、磁盘上一份、cc-switch 与 DSH 看的本来就是同一个目录——没有需要同步的东西，
+也就没有会漂移的东西。
+
+这个选择带来三个结论，每一个都是有意为之的取舍：
+
+- **cc-switch 是可选来源，不是依赖。** 它是只读的*来源*。没有它，你仍然拥有池内
+  逐个 skill 开关、完整的 MCP 启停与寄存；唯一少掉的是「按已存定义一键生成全新
+  MCP 配置块」。大多数 DSH 用户并没有装 cc-switch，程序不该假装他们装了。
+- **绝不写 cc-switch。** 它的库以 `readOnly: true` 打开，而且 cc-switch 根本没有
+  `enabled_dsh` 这一列——真要伪造一个，就等于去 fork 它。DSH 自己的开关状态放在
+  DSH 自己的文件里，也就是 DSH 真正会去看的地方。
+- **它是独立桌面应用，不是 DSH 设置页插件。** 换来的是真窗口、原生菜单和安装包，
+  代价是不嵌在 DSH 自己的界面里。
+
+**本工具不是什么**：它不统计真实 token 消耗。这里的数字是*固定* catalog 开销的
+估算值（字符数 / 3.5），用途是让你比较量级、决定该关哪个。要精确计费请用专门工具。
+
+如果你在横向比较这一片生态，
+[`awesome-deepseek-harness`](https://github.com/Dominic789654/awesome-deepseek-harness)
+收录了其中大部分项目。
 
 ---
 
