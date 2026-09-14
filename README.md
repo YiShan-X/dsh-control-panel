@@ -1,0 +1,254 @@
+# DSH Control Panel
+
+[![CI](https://github.com/YiShan-X/dsh-control-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/YiShan-X/dsh-control-panel/actions/workflows/ci.yml)
+[![Release](https://github.com/YiShan-X/dsh-control-panel/actions/workflows/release.yml/badge.svg)](https://github.com/YiShan-X/dsh-control-panel/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522.5-339933.svg)](https://nodejs.org)
+
+A desktop app that shows you what your DSH agent pays for on **every single
+model request** — and lets you switch the expensive parts off.
+
+English · [简体中文](README.zh-CN.md)
+
+![Skills tab](docs/screenshot.png)
+
+---
+
+## The problem it solves
+
+Skills and MCP servers are not free. Their definitions are injected into the
+context on **every** request, whether or not the model ends up using them:
+
+- The skill catalog alone rides ~2.6–3K tokens per request on a typical install.
+- MCP servers are worse, because they ship full tool definitions. A single
+  GitHub MCP server is ~4.0K tokens; a Gitee one with 25 tools is ~6.3K.
+
+Turning off the ones you are not using is the only way to get that context back.
+This panel makes that a switch instead of a text-editing exercise.
+
+![MCP tab](docs/screenshot-mcp.png)
+
+---
+
+## The one thing you must understand
+
+The two halves of the app behave **completely differently**, and the UI never
+stops reminding you why:
+
+| | Where the state lives | When a change takes effect |
+|---|---|---|
+| **Skills** | a link in `$DSH_HOME/skills` pointing at a pool directory | ⚡ **immediately, no restart** |
+| **MCP** | a block in `$DSH_HOME/cordis.patch.yml` | 🔁 **only after restarting `dsh web`** |
+
+**Why skills are live:** DSH's `dsh-skill-filesystem` provider watches the skill
+root. Adding or removing an entry there rebuilds the catalog, and the change is
+visible in the very next request. This is measured behaviour, not an assumption —
+see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the experiment.
+
+**Why MCP is not:** MCP servers are assembled once at boot. There is no hot
+reload, so the panel instead *tells you* when a restart is genuinely pending — it
+compares the patch file's mtime against the running `dsh web` process start time.
+If you have not changed anything, it stays quiet.
+
+---
+
+## Install
+
+### Prebuilt binaries
+
+Grab the installer for your platform from
+[Releases](https://github.com/YiShan-X/dsh-control-panel/releases):
+
+| Platform | File |
+|---|---|
+| Windows | `dsh-control-panel-<version>-x64-setup.exe` (`-arm64-setup.exe` also available), or `dsh-control-panel-<version>-portable.exe` |
+| macOS | `dsh-control-panel-<version>-x64.dmg` / `-arm64.dmg` |
+| Linux | `dsh-control-panel-<version>-x64.AppImage` or `.deb` |
+
+> The builds are unsigned. Windows SmartScreen and macOS Gatekeeper will warn
+> you about an unknown developer; that is expected for a project without a
+> code-signing certificate. Build from source if you would rather not click
+> through it.
+
+### From source
+
+```bash
+git clone https://github.com/YiShan-X/dsh-control-panel.git
+cd dsh-control-panel
+npm install          # only needed for the desktop shell
+npm run desktop      # or: npm run dist:win / dist:mac / dist:linux
+```
+
+### Browser mode — no install at all
+
+The core has **zero runtime dependencies**. If you would rather not install
+anything, run it as a local web app with nothing but Node:
+
+```bash
+node src/cli.mjs           # then open http://127.0.0.1:8791
+node src/cli.mjs --help    # all the options
+```
+
+On Windows you can also just double-click `start.cmd`, which launches the
+desktop app when it is built and silently falls back to browser mode when it is
+not.
+
+---
+
+## What it does
+
+**Skills tab**
+
+- One switch per skill, applied instantly
+- Per-skill token estimate, and a running total for everything currently on
+- Search, and bulk enable/disable across the filtered set
+- Shows the catalog name, the folder name, the description, the source
+  repository, and which agents the configuration hub has it enabled for
+
+**MCP tab**
+
+- One switch per server; the header banner appears only when a restart is
+  actually needed
+- Generate a DSH-format config block from a configuration-hub definition, for
+  both `stdio` and `streamable-http`
+- Automatically wraps `npx` / `uvx` and friends in `cmd /c` on Windows, because
+  libuv cannot spawn a `.cmd` shim directly
+
+**It also tells you about problems you cannot otherwise see.** The most common
+one: a skill whose `SKILL.md` has no frontmatter, or a `name` that is not
+kebab-case, is **silently discarded** by DSH — one warning in a log, invisible
+from the model's side. You think it is available; it is not. Those skills are
+listed in a red banner with the exact reason.
+
+![About tab](docs/screenshot-about.png)
+
+---
+
+## Safety guarantees
+
+This tool edits files in your user profile, so the dangerous operations are
+simply not implemented:
+
+1. **It never deletes a real directory.** Disabling a skill first proves the
+   entry is a link (`lstat`, not `stat`). A real directory is refused with
+   HTTP 409 and labelled `real directory · not a link` in the UI.
+2. **It never writes to the cc-switch database.** The DB is opened
+   `readOnly: true` and no write path exists anywhere in the code. cc-switch is
+   a running third-party app; its schema is its own.
+3. **It always leaves a valid patch file.** `cordis.patch.yml` must parse to a
+   top-level YAML array. Removing the last MCP block leaves an explicit `[]`,
+   because a comments-only file parses to `null` and the boot loader throws on
+   it — which would stop `dsh web` from starting.
+4. **It never overwrites hand-tuned MCP config.** Re-enabling a parked server
+   restores the block **verbatim** from `disabled.yml` before cc-switch is ever
+   consulted. Regenerating from cc-switch would silently throw away edits made
+   after the block was first generated.
+5. **It only opens named locations.** The `/api/open` endpoint accepts a fixed
+   set of keys, never a caller-supplied path, so a stray web page cannot use the
+   local server to launch anything.
+6. **It binds to loopback only.** `127.0.0.1` by default, and the desktop build
+   uses an OS-assigned port so it can never collide with anything else.
+
+---
+
+## Configuration
+
+Everything is derived from your home directory, so the project folder and the
+directories it manages are fully decoupled. The desktop app reads these from the
+environment; browser mode additionally accepts `--port` and `--host`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DSH_HOME` | `~/.dsh` | DSH home directory |
+| `DSH_SKILLS_DIR` | `$DSH_HOME/skills` | Where DSH discovers skills (the link target) |
+| `DSH_SKILL_POOL` | see below | `${path.delimiter}`-separated list of skill pools |
+| `DSH_PATCH_FILE` | `$DSH_HOME/cordis.patch.yml` | Enabled MCP blocks |
+| `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | Parked MCP blocks |
+| `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch home |
+| `DSH_PANEL_CC_SWITCH` | `1` | Set to `0` to ignore cc-switch entirely |
+| `DSH_PANEL_PORT` | `8791` | Browser-mode port (desktop mode picks a free one) |
+| `DSH_PANEL_HOST` | `127.0.0.1` | Browser-mode bind address |
+| `DSH_PANEL_POLL_MS` | `30000` | UI auto-refresh interval |
+
+When `DSH_SKILL_POOL` is not set, the pools are the cc-switch skill pool
+(`~/.cc-switch/skills`) followed by `$DSH_HOME/skill-pool`.
+
+### The configuration hub is optional
+
+[cc-switch](https://github.com/farion1231/cc-switch) is a multi-agent config
+hub that already uses the same "soft routing" pattern this panel implements: one
+skill pool on disk, linked into each agent's own skill root. It is used here as
+a **read-only source** — the pool plus MCP definitions in its SQLite database.
+
+It does not know about DSH, so DSH's own on/off state lives where DSH expects
+it: a link in the skill root, and a delimited block in the patch file.
+
+**Without cc-switch the panel still works.** You keep per-skill switching for
+anything in your pool, and full MCP on/off plus parking. What you lose is the
+one-click generation of a brand-new MCP block from a stored definition.
+
+The delimited-block format (`# BEGIN MCP: <name>` / `# END MCP: <name>`) is the
+same convention the `dsh-mcp-manager` skill's `mcp.ps1` uses, so the two can be
+mixed on the same files without either corrupting the other.
+
+---
+
+## Development
+
+```bash
+npm test              # 70 unit + integration tests, no test framework
+npm run smoke         # boot the real Electron window, then exit
+npm run screenshot    # regenerate docs/ using synthetic demo data
+npm run icons         # regenerate build/ icons (hand-written PNG/ICO encoder)
+npm run pack          # electron-builder --dir, unpacked, for quick checks
+```
+
+The test suite runs against throwaway sandboxes in the OS temp directory; it
+never touches a real profile.
+
+### Layout
+
+```
+src/
+  core/            zero-dependency panel core, shared by both front-ends
+    config.mjs       environment -> explicit config object
+    frontmatter.mjs  SKILL.md parsing, without a YAML library
+    skills.mjs       skill model, link creation and removal
+    mcp.mjs          MCP model, cc-switch -> DSH converter
+    patch.mjs        the delimited-block editor
+    ccswitch.mjs     optional read-only SQLite source
+    server.mjs       createPanelServer() -- the HTTP layer
+  cli.mjs          browser mode
+  desktop/main.mjs Electron main process
+public/index.html  the whole UI (inline CSS/JS, en + zh-CN)
+scripts/           icon generator, smoke test, screenshot generator
+```
+
+---
+
+## FAQ
+
+**I toggled an MCP server and nothing happened.**
+Working as intended — restart `dsh web`. The banner at the top of the MCP tab
+tells you whether a restart is pending.
+
+**The page is blank.**
+Open the About tab, or hit `http://127.0.0.1:8791/api/state` directly in browser
+mode. If that returns JSON, the server is fine and the problem is in the page.
+In the desktop app, `Help → Reveal log file` points at the log.
+
+**`cc-switch DB` shows as unavailable.**
+The panel degrades to "whatever DSH itself knows about" instead of failing. See
+the banner for the exact reason; on an older runtime it is usually that
+`node:sqlite` is missing (it needs Node 22.5+ or Electron 38+).
+
+**Does it work on macOS and Linux?**
+The core is cross-platform: directory symlinks on POSIX, junctions on Windows,
+and the `cmd /c` shim wrapping only applies on Windows. The desktop builds are
+produced by CI for all three platforms.
+
+---
+
+## License
+
+[MIT](LICENSE)

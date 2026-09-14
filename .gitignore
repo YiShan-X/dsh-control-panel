@@ -1,0 +1,33 @@
+# Dependencies. The panel core has none -- only the desktop packaging does.
+node_modules/
+
+# electron-builder output
+release/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local overrides / secrets.
+# The panel reads credentials OUT of the user's own DSH and cc-switch config;
+# it must never carry any of its own.
+.env
+.env.local
+*.local.json
+
+# Throwaway sandboxes used while debugging
+.tmp/
+sandbox/

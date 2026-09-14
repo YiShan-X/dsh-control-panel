@@ -1,0 +1,18 @@
+# Normalise line endings. The artwork and sources are LF; Windows launchers and
+# batch files must be CRLF or cmd.exe misbehaves.
+* text=auto eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary assets -- never "normalise" these.
+*.png binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.dmg binary
+*.AppImage binary
+
+# Keep these out of GitHub's language statistics.
+public/index.html linguist-documentation=false
+build/icons/*.png -linguist-generated

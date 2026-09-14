@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: Publish as a draft release
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build · ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            args: --win
+          - name: linux
+            os: ubuntu-latest
+            args: --linux
+          - name: macos
+            os: macos-latest
+            args: --mac
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+
+      # Never ship a build whose tests do not pass.
+      - run: npm test
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      - name: Build installers
+        run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+
+  release:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List what will be published
+        run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          body: |
+            ## DSH Control Panel
+
+            Download the file for your platform:
+
+            | Platform | File |
+            |---|---|
+            | Windows | `…-setup.exe` (installer) or `…-portable.exe` |
+            | macOS | `.dmg` (Intel and Apple Silicon are separate files) |
+            | Linux | `.AppImage` or `.deb` |
+
+            **The builds are unsigned.** Windows SmartScreen and macOS Gatekeeper
+            will warn about an unknown developer — that is expected for a project
+            without a code-signing certificate. Build from source if you would
+            rather not click through it.
+
+            See the [README](https://github.com/YiShan-X/dsh-control-panel#readme)
+            for what the app does and the guarantees it makes about your files.
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.blockmap
+            dist/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

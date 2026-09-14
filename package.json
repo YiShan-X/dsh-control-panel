@@ -1,0 +1,151 @@
+{
+  "name": "dsh-control-panel",
+  "version": "1.0.0",
+  "description": "Desktop control panel for DSH: toggle the skills and MCP servers that cost tokens on every model request.",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "mcp",
+    "skills",
+    "control-panel",
+    "electron",
+    "tokens",
+    "context-window"
+  ],
+  "homepage": "https://github.com/YiShan-X/dsh-control-panel#readme",
+  "bugs": {
+    "url": "https://github.com/YiShan-X/dsh-control-panel/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YiShan-X/dsh-control-panel.git"
+  },
+  "license": "MIT",
+  "author": "YiShan-X",
+  "type": "module",
+  "main": "src/desktop/main.mjs",
+  "bin": {
+    "dsh-control-panel": "src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "files": [
+    "src",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "serve": "node src/cli.mjs",
+    "desktop": "electron .",
+    "smoke": "node scripts/smoke.mjs",
+    "screenshot": "node scripts/screenshot.mjs",
+    "test": "node --test",
+    "icons": "node scripts/make-icons.mjs",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "io.github.yishan-x.dsh-control-panel",
+    "productName": "DSH Control Panel",
+    "copyright": "Copyright © 2026 DSH Control Panel contributors",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "extraMetadata": {
+      "main": "src/desktop/main.mjs"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${name}-${version}-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "buildUniversalInstaller": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DSH Control Panel"
+    },
+    "portable": {
+      "artifactName": "${name}-${version}-portable.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${name}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Development",
+      "synopsis": "Toggle DSH skills and MCP servers",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${name}-${version}-${arch}.${ext}"
+    }
+  }
+}

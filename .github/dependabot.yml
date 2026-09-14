@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Only the desktop toolchain is a dependency at all; the panel core has none.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      electron:
+        patterns:
+          - electron
+          - electron-builder
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore

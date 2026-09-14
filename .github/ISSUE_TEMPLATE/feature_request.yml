@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a capability the panel does not have
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project has a deliberately narrow scope: it makes the token cost of
+        skills and MCP servers visible and switchable, using the mechanisms DSH
+        already has. Ideas that fit that scope are very welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you actually trying to do that you cannot do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, or a manual workaround.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: This does not require deleting a real directory, writing to the cc-switch database, or leaving the patch file in a non-array state
+          required: false

@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" />
+<title>DSH Control Panel</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a21;
+    --panel-2: #1c212a;
+    --line: #262c37;
+    --fg: #e6e9ef;
+    --fg-dim: #9aa4b2;
+    --fg-faint: #6b7484;
+    --accent: #4f8cff;
+    --on: #35c07a;
+    --off: #55607a;
+    --warn: #e0a33c;
+    --err: #e5604d;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  a { color: var(--accent); }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: linear-gradient(180deg, #12151b 0%, #12151bee 100%);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 20px 0;
+    backdrop-filter: blur(8px);
+  }
+  .titlebar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  h1 span { color: var(--fg-faint); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .chips { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .chip {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 11px; font-size: 12px; color: var(--fg-dim); white-space: nowrap;
+  }
+  .chip b { color: var(--fg); font-weight: 600; }
+  .chip.on b { color: var(--on); }
+  button {
+    font: inherit; color: var(--fg); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px;
+    cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  button:hover:not(:disabled) { background: #232936; border-color: #39414f; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: #3d7ae8; }
+  button.mini { padding: 3px 9px; font-size: 12px; border-radius: 6px; }
+  .tabs { display: flex; gap: 4px; margin-top: 12px; }
+  .tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0; padding: 9px 14px; color: var(--fg-dim); font-weight: 500;
+  }
+  .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+  .tab .n { color: var(--fg-faint); font-size: 12px; margin-left: 5px; }
+
+  main { padding: 16px 20px 60px; max-width: 1180px; margin: 0 auto; }
+
+  .banner {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid #4a3a1a; background: #241d0e; color: #f0d49a;
+    border-radius: 9px; padding: 11px 14px; margin-bottom: 14px; font-size: 13px;
+  }
+  .banner.info { border-color: #1f3550; background: #101c2b; color: #9dc4f0; }
+  .banner.err { border-color: #52251f; background: #2a1512; color: #f0a99c; }
+  .banner code { font-family: var(--mono); font-size: 12px; }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  input[type=search] {
+    flex: 1; min-width: 200px; font: inherit; color: var(--fg);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 11px;
+  }
+  input[type=search]:focus { outline: none; border-color: var(--accent); }
+
+  .list { display: flex; flex-direction: column; gap: 7px; }
+  .row {
+    display: grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: start;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; padding: 11px 13px;
+  }
+  .row.is-on { border-color: #24503a; background: #141d19; }
+  .row.is-bad { border-color: #4a2620; }
+  .row.is-unmanaged { border-color: #3a3320; }
+  .sub { color: var(--fg-dim); font-size: 12.5px; margin-top: 2px; }
+
+  /* switch */
+  .sw { padding-top: 1px; }
+  .sw input { display: none; }
+  .sw label {
+    display: block; width: 40px; height: 22px; border-radius: 999px;
+    background: var(--off); position: relative; cursor: pointer; transition: background .15s;
+  }
+  .sw label::after {
+    content: ""; position: absolute; top: 3px; left: 3px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  .sw input:checked + label { background: var(--on); }
+  .sw input:checked + label::after { transform: translateX(18px); }
+  .sw input:disabled + label { opacity: .35; cursor: not-allowed; }
+
+  .name { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .name code { font-family: var(--mono); font-size: 13px; }
+  .dir { color: var(--fg-faint); font-family: var(--mono); font-size: 11.5px; font-weight: 400; }
+  .desc { color: var(--fg-dim); font-size: 13px; margin-top: 3px; }
+  .desc.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; align-items: center; }
+  .tag {
+    font-size: 11px; padding: 1px 7px; border-radius: 5px;
+    background: #202633; color: var(--fg-faint); border: 1px solid #2b323f;
+    font-family: var(--mono);
+  }
+  .tag.bad { background: #2c1714; color: #eb8b7b; border-color: #4a2620; }
+  .tag.warn { background: #2a2211; color: #dfb263; border-color: #4a3a1a; }
+  .tag.good { background: #12271d; color: #6fd39c; border-color: #24503a; }
+  .right { text-align: right; color: var(--fg-faint); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+  .right .tk { font-family: var(--mono); color: var(--fg-dim); }
+  .empty { color: var(--fg-faint); padding: 30px; text-align: center; }
+  footer { color: var(--fg-faint); font-size: 11.5px; margin-top: 26px; line-height: 1.9; }
+  footer code { font-family: var(--mono); color: var(--fg-dim); }
+  .toast {
+    position: fixed; right: 18px; bottom: 18px; z-index: 50;
+    background: #2a1512; border: 1px solid #52251f; color: #f0a99c;
+    padding: 10px 14px; border-radius: 8px; max-width: 460px; font-size: 13px;
+    box-shadow: 0 8px 28px #0008;
+  }
+  .spin { display: inline-block; animation: r 1s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+
+  table.paths { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.paths td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.paths td:first-child { color: var(--fg-dim); white-space: nowrap; width: 1%; }
+  table.paths code { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; padding: 14px 16px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 13px; margin: 0 0 10px; color: var(--fg-dim); font-weight: 600;
+             text-transform: uppercase; letter-spacing: .6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="titlebar">
+    <h1><span id="i18nTitle">DSH Control Panel</span><span id="i18nSubtitle"></span></h1>
+    <div class="chips" id="chips"></div>
+    <button id="lang" title="Language / 语言">中</button>
+    <button id="refresh"></button>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="skills">Skills <span class="n" id="nSkills"></span></button>
+    <button class="tab" data-tab="mcp">MCP <span class="n" id="nMcp"></span></button>
+    <button class="tab" data-tab="about" id="tabAbout"></button>
+  </div>
+</header>
+
+<main>
+  <div id="banners"></div>
+
+  <section id="view-skills">
+    <div class="banner info">
+      <span>⚡</span>
+      <div id="skillsBanner"></div>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="q" />
+      <button id="skOff"></button>
+      <button id="skOn"></button>
+    </div>
+    <div class="list" id="skillList"></div>
+  </section>
+
+  <section id="view-mcp" style="display:none">
+    <div class="banner">
+      <span>🔁</span>
+      <div id="mcpBanner"></div>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="qm" />
+    </div>
+    <div class="list" id="mcpList"></div>
+  </section>
+
+  <section id="view-about" style="display:none">
+    <div class="card">
+      <h2 id="aboutRuntime"></h2>
+      <table class="paths" id="runtimeTable"></table>
+    </div>
+    <div class="card">
+      <h2 id="aboutPaths"></h2>
+      <table class="paths" id="pathsTable"></table>
+    </div>
+    <div class="card">
+      <h2 id="aboutPools"></h2>
+      <table class="paths" id="poolsTable"></table>
+    </div>
+    <div class="card">
+      <h2 id="aboutSource"></h2>
+      <div id="sourceBody" style="font-size:13px;color:var(--fg-dim)"></div>
+    </div>
+  </section>
+
+  <footer id="foot"></footer>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// i18n
+// ---------------------------------------------------------------------------
+const I18N = {
+  en: {
+    title: 'DSH Control Panel',
+    subtitle: 'Skills & MCP — switch off what you are not using',
+    refresh: 'Refresh', refreshBusy: 'Loading…',
+    tabSkills: 'Skills', tabMcp: 'MCP', tabAbout: 'About',
+    skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} on · ~<b>${t}</b> tok/request`,
+    mcpChip: (a, b) => `MCP <b>${a}</b>/${b} on`,
+    skillsBannerTitle: 'Skill changes take effect immediately — no restart.',
+    skillsBannerBody: (p) => `DSH's skill provider watches <code>${p}</code>; adding or removing a
+      link there is reflected in the catalog on the very next request. Turning one off reclaims its
+      description cost on every request.`,
+    mcpBannerTitle: 'MCP changes need a <code>dsh web</code> restart.',
+    mcpBannerBody: 'MCP servers are assembled once at startup and are not hot-reloaded.',
+    restartBannerTitle: 'The MCP composition changed, but the running <code>dsh web</code> has not restarted yet.',
+    restartBannerBody: (a, b) => `Patch last modified ${a} · dsh web started ${b}.<br>
+      Restart by quitting the current <code>dsh web</code> and running it again.`,
+    invalidTitle: (n) => `${n} skill${n === 1 ? '' : 's'} will be silently dropped by DSH`,
+    invalidBody: 'Missing or invalid frontmatter, or a non-kebab-case name. These never reach the catalog:',
+    realDirsTitle: (n) => `${n} real director${n === 1 ? 'y' : 'ies'} (not links) in the DSH skill root`,
+    realDirsBody: (p) => `They live in <code>${p}</code> and belong to you. Shown, never deleted from here.`,
+    dupTitle: 'The same skill folder name exists in more than one pool',
+    dupBody: 'Only the first pool wins; the rest are ignored.',
+    noCcTitle: 'Configuration hub not in use',
+    noCcBody: (r) => `cc-switch is optional and was not found (${r}). The panel still manages
+      everything DSH itself knows about: skill links and MCP blocks.`,
+    searchSkills: 'Search name / folder / description…',
+    searchMcp: 'Search MCP servers…',
+    enableFiltered: 'Enable filtered', disableFiltered: 'Disable filtered',
+    enable: 'Enable', disable: 'Disable',
+    noSkills: 'No matching skills', noMcp: 'No matching MCP servers',
+    noDescription: '(no description)',
+    tok: 'tok',
+    willBeDropped: (r) => `dropped by DSH: ${r}`,
+    realDir: 'real directory · not a link',
+    brokenLink: 'broken link',
+    inPoolOnly: 'in pool, not enabled',
+    dshLocal: 'only in the DSH skill root',
+    poolMissing: 'folder missing on disk',
+    fromCcDb: 'description from the hub DB',
+    srcCc: 'cc-switch', srcPool: 'pool', srcDsh: 'DSH root',
+    on: 'on', off: 'off',
+    neverInDsh: 'not in DSH yet — enabling generates the block from the hub',
+    parked: 'disabled — definition parked',
+    onlyInPatch: 'only in the DSH patch file',
+    serverName: (n) => `serverName ${n}`,
+    whyRealDir: 'not a link; refusing to delete',
+    whyMissing: 'folder does not exist in the pool',
+    whyInvalid: 'DSH would reject it',
+    toggle: 'Toggle',
+    cannotGenerate: 'no hub definition to generate from',
+    confirmBulk: (verb, n) => `${verb} ${n} skill(s)?` + (verb === 'Enable' ? '' : '\n(only links are removed; pool files are untouched)'),
+    confirmBulkOffNote: '',
+    nothingToDo: 'Nothing in the filtered list can be changed',
+    bulkDone: (ok, bad) => `Changed ${ok}${bad ? `, ${bad} failed` : ''}`,
+    loadFailed: (m) => `Load failed: ${m}`,
+    opFailed: (m) => `Operation failed: ${m}`,
+    aboutRuntime: 'Runtime',
+    aboutPaths: 'Paths',
+    aboutPools: 'Skill pools',
+    aboutSource: 'Data sources',
+    vVersion: 'Version', vPlatform: 'Platform', vNode: 'Node', vElectron: 'Electron',
+    vSkillRoot: 'DSH skill root', vPoolList: 'Configured pools',
+    pHome: 'Home', pDshHome: 'DSH home', pDshSkills: 'DSH skill root',
+    pPatch: 'MCP patch file', pDisabled: 'Parked MCP blocks',
+    pCcHome: 'cc-switch home', pCcDb: 'cc-switch DB (read-only)',
+    open: 'Open', notConfigured: 'not found',
+    sourceCc: (a) => `cc-switch: ${a ? 'connected (read-only)' : 'not available'}`,
+    sourceCcAgents: (a) => `Agent switches detected in its DB: ${a}`,
+    sourceTokens: 'Token counts are estimates at characters / 3.5, for comparing orders of magnitude only.',
+    sourcePatch: (p, d) => `MCP state lives in <code>${p}</code> (enabled) and <code>${d}</code> (parked). Both use the
+      same <code># BEGIN MCP:</code> / <code># END MCP:</code> convention as dsh-mcp-manager, so the two can be mixed.`,
+    sourceSafety: 'This tool never deletes a real directory, never writes to the cc-switch database, and always keeps the patch file a valid YAML array.',
+    project: 'Project on GitHub',
+    footPool: (p) => `Skill pools: <code>${p}</code>`,
+    footSkillRoot: (p) => `Link target: <code>${p}</code>`,
+    footPatch: (p) => `MCP patch: <code>${p}</code>`,
+  },
+  'zh-CN': {
+    title: 'DSH 控制台',
+    subtitle: 'Skills 与 MCP · 按需开关',
+    refresh: '刷新', refreshBusy: '加载中…',
+    tabSkills: 'Skills', tabMcp: 'MCP', tabAbout: '关于',
+    skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} 开 · ~<b>${t}</b> tok/请求`,
+    mcpChip: (a, b) => `MCP <b>${a}</b>/${b} 开`,
+    skillsBannerTitle: 'Skills 改动立即生效，无需重启。',
+    skillsBannerBody: (p) => `DSH 的 skill provider 会监听 <code>${p}</code>，加/删软链接即刻反映到 catalog；
+      关掉一个 skill 就省掉它每个请求的描述开销。`,
+    mcpBannerTitle: 'MCP 改动必须重启 <code>dsh web</code> 才生效。',
+    mcpBannerBody: 'MCP 是装配层，启动时只读一次组合，没有热加载。',
+    restartBannerTitle: 'MCP 配置已改，但运行中的 <code>dsh web</code> 还没重启，改动尚未生效。',
+    restartBannerBody: (a, b) => `patch 最后修改：${a} · dsh web 启动：${b}<br>
+      重启方法：先退出当前 <code>dsh web</code>，再重新执行。`,
+    invalidTitle: (n) => `${n} 个 skill 会被 DSH 静默丢弃`,
+    invalidBody: '缺 frontmatter、字段不全，或名字不是 kebab-case。它们即使开了也不会进入 catalog：',
+    realDirsTitle: (n) => `DSH skill 根目录下有 ${n} 个真实目录（非软链接）`,
+    realDirsBody: (p) => `它们在 <code>${p}</code> 里，属于你自己。本工具只展示、绝不删除。`,
+    dupTitle: '同一个 skill 目录名出现在多个池里',
+    dupBody: '只有第一个池生效，其余被忽略。',
+    noCcTitle: '未启用配置中枢',
+    noCcBody: (r) => `cc-switch 是可选来源，当前不可用（${r}）。面板仍然可以管理 DSH 自己知道的一切：
+      skill 软链接与 MCP 配置块。`,
+    searchSkills: '搜索名称 / 目录 / 描述…',
+    searchMcp: '搜索 MCP 服务器…',
+    enableFiltered: '开启筛选结果', disableFiltered: '关闭筛选结果',
+    enable: '开启', disable: '关闭',
+    noSkills: '没有匹配的 skill', noMcp: '没有匹配的 MCP 服务器',
+    noDescription: '（无描述）',
+    tok: 'tok',
+    willBeDropped: (r) => `会被丢弃：${r}`,
+    realDir: '真实目录 · 非软链接',
+    brokenLink: '链接已失效',
+    inPoolOnly: '仅在池中 · 未启用',
+    dshLocal: '仅在 DSH 根目录',
+    poolMissing: '池内目录缺失',
+    fromCcDb: '描述来自 DB（SKILL.md 未解析出）',
+    srcCc: 'cc-switch', srcPool: '池', srcDsh: 'DSH 根目录',
+    on: '已开', off: '已关',
+    neverInDsh: '尚未加入 DSH（开启即按中枢配置生成）',
+    parked: '已停用（定义留在 disabled.yml）',
+    onlyInPatch: '仅存在于 DSH patch',
+    serverName: (n) => `serverName ${n}`,
+    whyRealDir: '不是软链接，拒绝删除',
+    whyMissing: '池内目录不存在',
+    whyInvalid: 'DSH 会拒绝加载它',
+    toggle: '切换',
+    cannotGenerate: '中枢里没有可生成的配置',
+    confirmBulk: (verb, n) => `将${verb} ${n} 个 skill？` + (verb === '开启' ? '' : '\n（只删除软链接，池内原始文件不动）'),
+    confirmBulkOffNote: '',
+    nothingToDo: '筛选结果里没有可操作的 skill',
+    bulkDone: (ok, bad) => `${ok} 个已处理${bad ? `，${bad} 个失败` : ''}`,
+    loadFailed: (m) => `加载失败: ${m}`,
+    opFailed: (m) => `操作失败: ${m}`,
+    aboutRuntime: '运行环境',
+    aboutPaths: '路径',
+    aboutPools: 'Skill 池',
+    aboutSource: '数据来源',
+    vVersion: '版本', vPlatform: '平台', vNode: 'Node', vElectron: 'Electron',
+    vSkillRoot: 'DSH skill 根目录', vPoolList: '已配置的池',
+    pHome: '用户目录', pDshHome: 'DSH 目录', pDshSkills: 'DSH skill 根目录',
+    pPatch: 'MCP patch 文件', pDisabled: '停用的 MCP 块',
+    pCcHome: 'cc-switch 目录', pCcDb: 'cc-switch DB（只读）',
+    open: '打开', notConfigured: '未找到',
+    sourceCc: (a) => `cc-switch：${a ? '已连接（只读）' : '不可用'}`,
+    sourceCcAgents: (a) => `其 DB 中检测到的 agent 开关：${a}`,
+    sourceTokens: 'token 为按字符数 / 3.5 的估算值，仅用于比较量级。',
+    sourcePatch: (p, d) => `MCP 状态存放在 <code>${p}</code>（启用）与 <code>${d}</code>（停用）。两者都使用与
+      dsh-mcp-manager 相同的 <code># BEGIN MCP:</code> / <code># END MCP:</code> 约定，可以混用。`,
+    sourceSafety: '本工具绝不删除真实目录，绝不写入 cc-switch 数据库，并始终让 patch 文件保持合法的 YAML 数组。',
+    project: 'GitHub 项目主页',
+    footPool: (p) => `skill 池：<code>${p}</code>`,
+    footSkillRoot: (p) => `链接目标：<code>${p}</code>`,
+    footPatch: (p) => `MCP patch：<code>${p}</code>`,
+  },
+};
+
+const REPO = 'https://github.com/YiShan-X/dsh-control-panel';
+const SUPPORTED = ['en', 'zh-CN'];
+
+/** Explicit `?lang=` wins, then the stored choice, then the browser locale. */
+function pickLang() {
+  try {
+    const forced = new URLSearchParams(location.search).get('lang');
+    if (forced && SUPPORTED.includes(forced)) return forced;
+  } catch { /* no location.search in some embeddings */ }
+  const stored = localStorage.getItem('dshcp.lang');
+  if (stored && SUPPORTED.includes(stored)) return stored;
+  return (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+}
+
+let lang = pickLang();
+const t = (k, ...args) => {
+  const v = (I18N[lang] || I18N.en)[k] ?? I18N.en[k] ?? k;
+  return typeof v === 'function' ? v(...args) : v;
+};
+
+// ---------------------------------------------------------------------------
+// State + helpers
+// ---------------------------------------------------------------------------
+const $ = (s) => document.querySelector(s);
+const state = { skills: [], mcp: [], skillSummary: {}, mcpMeta: {}, paths: {}, ccSwitch: {}, pools: [] };
+let tab = 'skills';
+let timer = null;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const fmtTime = (iso) => {
+  if (!iso) return lang === 'zh-CN' ? '未知' : 'unknown';
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso) : d.toLocaleString(lang, { hour12: false });
+};
+
+const num = (n) => Number(n ?? 0).toLocaleString(lang);
+
+/** Collapse the user's home directory to `~` so paths stay readable. */
+function short(p) {
+  const home = state.paths && state.paths.home;
+  if (!p || !home) return p || '';
+  const norm = (s) => String(s).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const n = norm(p);
+  const h = norm(home);
+  return n === h || n.startsWith(h + '/') ? '~' + String(p).slice(home.length) : p;
+}
+
+function toast(msg) {
+  document.querySelector('.toast')?.remove();
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 7000);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'content-type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+async function openTarget(target) {
+  try {
+    const r = await api('/api/open', { target });
+    if (r.error) toast(r.error);
+  } catch (err) { toast(String(err.message)); }
+}
+
+// ---------------------------------------------------------------------------
+// Loading
+// ---------------------------------------------------------------------------
+async function load(showSpinner) {
+  if (showSpinner) $('#refresh').innerHTML = `<span class="spin">◐</span> ${esc(t('refreshBusy'))}`;
+  try {
+    const data = await api('/api/state');
+    Object.assign(state, data);
+    render();
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => load(false), Math.max(5000, state.pollMs || 30000));
+  } catch (err) {
+    toast(t('loadFailed', err.message));
+  } finally {
+    $('#refresh').textContent = t('refresh');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+function render() {
+  document.documentElement.lang = lang;
+  $('#i18nTitle').textContent = t('title');
+  $('#i18nSubtitle').textContent = t('subtitle');
+  $('#lang').textContent = lang === 'zh-CN' ? 'EN' : '中';
+  $('#tabAbout').textContent = t('tabAbout');
+  $('#skillsBanner').innerHTML = `<b>${t('skillsBannerTitle')}</b> ${t('skillsBannerBody', esc(short(state.paths.dshSkills)))}`;
+  $('#mcpBanner').innerHTML = `<b>${t('mcpBannerTitle')}</b> ${t('mcpBannerBody')}`;
+  $('#q').placeholder = t('searchSkills');
+  $('#qm').placeholder = t('searchMcp');
+  $('#skOff').textContent = t('disableFiltered');
+  $('#skOn').textContent = t('enableFiltered');
+  $('#refresh').textContent = t('refresh');
+
+  const s = state.skillSummary || {};
+  const mcpOn = state.mcp.filter((m) => m.enabled).length;
+
+  $('#chips').innerHTML = `
+    <span class="chip on">${t('skillsChip', s.enabled ?? 0, s.total ?? 0, num(s.enabledTokens ?? 0))}</span>
+    <span class="chip on">${t('mcpChip', mcpOn, state.mcp.length)}</span>`;
+  $('#nSkills').textContent = `${s.enabled ?? 0}/${s.total ?? 0}`;
+  $('#nMcp').textContent = `${mcpOn}/${state.mcp.length}`;
+
+  renderBanners();
+  renderSkills();
+  renderMcp();
+  renderAbout();
+
+  $('#foot').innerHTML = `
+    <div>${t('footPool', esc(state.pools.map((p) => short(p.dir)).join('  ·  ')))}</div>
+    <div>${t('footSkillRoot', esc(short(state.paths.dshSkills)))}</div>
+    <div>${t('footPatch', esc(short(state.mcpMeta?.files?.patch)))}</div>
+    <div>${t('sourceTokens')} · <a href="${REPO}" target="_blank" rel="noopener">${t('project')}</a></div>`;
+}
+
+function renderBanners() {
+  const banners = [];
+  const meta = state.mcpMeta || {};
+
+  if (meta.restartPending) {
+    banners.push(`<div class="banner"><span>⚠️</span><div>
+      <b>${t('restartBannerTitle')}</b><br>
+      ${t('restartBannerBody', esc(fmtTime(meta.patchMtime)), esc(fmtTime(meta.dshWebStartedAt)))}
+    </div></div>`);
+  }
+
+  const invalid = state.skills.filter((k) => !k.valid && k.installed);
+  if (invalid.length) {
+    banners.push(`<div class="banner err"><span>⛔</span><div>
+      <b>${t('invalidTitle', invalid.length)}</b> — ${t('invalidBody')}
+      ${invalid.map((k) => `<code>${esc(k.dirName)}</code>`).join('、')}
+    </div></div>`);
+  }
+
+  const realDirs = state.skills.filter((k) => k.isRealDir);
+  if (realDirs.length) {
+    banners.push(`<div class="banner info"><span>🔒</span><div>
+      <b>${t('realDirsTitle', realDirs.length)}</b> —
+      ${t('realDirsBody', esc(short(state.paths.dshSkills)))}
+      ${realDirs.map((k) => `<code>${esc(k.dirName)}</code>`).join('、')}
+    </div></div>`);
+  }
+
+  if (state.duplicates?.length) {
+    banners.push(`<div class="banner"><span>⚠️</span><div>
+      <b>${t('dupTitle')}</b> — ${t('dupBody')}
+      ${state.duplicates.map((d) => `<code>${esc(d)}</code>`).join('、')}
+    </div></div>`);
+  }
+
+  if (state.ccSwitch && state.ccSwitch.available === false) {
+    banners.push(`<div class="banner info"><span>ℹ️</span><div>
+      <b>${t('noCcTitle')}</b> — ${t('noCcBody', esc(state.ccSwitch.reason || ''))}
+    </div></div>`);
+  }
+
+  $('#banners').innerHTML = banners.join('');
+}
+
+function skillTags(k) {
+  const tags = [];
+  if (!k.valid && k.installed) tags.push(`<span class="tag bad">${esc(t('willBeDropped', k.reason || ''))}</span>`);
+  if (k.isRealDir) tags.push(`<span class="tag warn">${esc(t('realDir'))}</span>`);
+  if (k.brokenLink) tags.push(`<span class="tag bad">${esc(t('brokenLink'))}</span>`);
+  if (!k.installed) tags.push(`<span class="tag bad">${esc(t('poolMissing'))}</span>`);
+  if (k.source === 'dsh-local') tags.push(`<span class="tag warn">${esc(t('dshLocal'))}</span>`);
+  else if (!k.enabled) tags.push(`<span class="tag">${esc(t('inPoolOnly'))}</span>`);
+  if (k.repo) tags.push(`<span class="tag">${esc(k.repo)}</span>`);
+  if (k.flags) {
+    const on = Object.entries(k.flags).filter(([, v]) => v).map(([a]) => a);
+    if (on.length) tags.push(`<span class="tag">cc-switch: ${esc(on.join(','))}</span>`);
+  }
+  if (k.descSource === 'cc-switch') tags.push(`<span class="tag">${esc(t('fromCcDb'))}</span>`);
+  return tags.join('');
+}
+
+function renderSkills() {
+  const q = $('#q').value.trim().toLowerCase();
+  const rows = state.skills.filter((k) => !q ||
+    (k.name + ' ' + k.dirName + ' ' + (k.description || '')).toLowerCase().includes(q));
+
+  if (!rows.length) { $('#skillList').innerHTML = `<div class="empty">${t('noSkills')}</div>`; return; }
+
+  $('#skillList').innerHTML = rows.map((k) => {
+    const cls = ['row'];
+    if (k.enabled) cls.push('is-on');
+    if (!k.valid && k.installed) cls.push('is-bad');
+    if (k.isRealDir) cls.push('is-unmanaged');
+
+    const disabled = k.enabled ? !k.canDisable : !k.canEnable;
+    const why = k.enabled
+      ? (k.canDisable ? t('toggle') : t('whyRealDir'))
+      : (!k.installed ? t('whyMissing') : (!k.valid ? t('whyInvalid') : t('toggle')));
+
+    return `<div class="${cls.join(' ')}">
+      <div class="sw">
+        <input type="checkbox" id="sk-${esc(k.key)}" ${k.enabled ? 'checked' : ''}
+               ${disabled ? 'disabled' : ''} data-key="${esc(k.key)}"
+               data-pool="${esc(k.poolDir || '')}" data-kind="skill">
+        <label for="sk-${esc(k.key)}" title="${esc(why)}"></label>
+      </div>
+      <div>
+        <div class="name"><code>${esc(k.name)}</code>
+          ${k.name !== k.dirName ? `<span class="dir">${esc(k.dirName)}</span>` : ''}</div>
+        <div class="desc${(k.description || '').length > 150 ? ' clamp' : ''}">${esc(k.description || t('noDescription'))}</div>
+        <div class="meta">${skillTags(k)}</div>
+      </div>
+      <div class="right">${k.valid ? `~<span class="tk">${k.tokens}</span> ${t('tok')}` : '—'}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMcp() {
+  const q = $('#qm').value.trim().toLowerCase();
+  const rows = state.mcp.filter((m) => !q ||
+    (m.displayName + ' ' + m.key + ' ' + (m.summary || '')).toLowerCase().includes(q));
+
+  if (!rows.length) { $('#mcpList').innerHTML = `<div class="empty">${t('noMcp')}</div>`; return; }
+
+  $('#mcpList').innerHTML = rows.map((m) => {
+    const cls = ['row'];
+    if (m.enabled) cls.push('is-on');
+    if (!m.renderable && m.status === 'never') cls.push('is-bad');
+
+    const tags = [`<span class="tag">${esc(m.transport)}</span>`];
+    if (m.status === 'never') tags.push(`<span class="tag">${esc(t('neverInDsh'))}</span>`);
+    if (m.status === 'off') tags.push(`<span class="tag warn">${esc(t('parked'))}</span>`);
+    if (m.serverName !== m.displayName) tags.push(`<span class="tag">${esc(t('serverName', m.serverName))}</span>`);
+    if (m.managed === 'dsh' && m.enabled) tags.push(`<span class="tag warn">${esc(t('onlyInPatch'))}</span>`);
+    for (const w of (m.warnings || [])) tags.push(`<span class="tag warn">${esc(w)}</span>`);
+
+    const disabled = !m.renderable && !m.enabled;
+    return `<div class="${cls.join(' ')}">
+      <div class="sw">
+        <input type="checkbox" id="mc-${esc(m.key)}" ${m.enabled ? 'checked' : ''}
+               ${disabled ? 'disabled' : ''} data-key="${esc(m.key)}" data-kind="mcp">
+        <label for="mc-${esc(m.key)}" title="${esc(disabled ? t('cannotGenerate') : t('toggle'))}"></label>
+      </div>
+      <div>
+        <div class="name"><code>${esc(m.displayName)}</code></div>
+        <div class="desc"><code style="font-family:var(--mono);font-size:12px">${esc(m.summary || '')}</code></div>
+        <div class="meta">${tags.join('')}</div>
+      </div>
+      <div class="right">${m.enabled ? t('on') : t('off')}</div>
+    </div>`;
+  }).join('');
+}
+
+function pathRow(label, value, target, keepFull) {
+  const shown = value ? (keepFull ? value : short(value)) : t('notConfigured');
+  const btn = value && target
+    ? ` <button class="mini" data-open="${esc(target)}">${esc(t('open'))}</button>` : '';
+  return `<tr><td>${esc(label)}</td><td><code title="${esc(value || '')}">${esc(shown)}</code>${btn}</td></tr>`;
+}
+
+function renderAbout() {
+  const p = state.paths || {};
+  const rt = state.runtime || {};
+  $('#aboutRuntime').textContent = t('aboutRuntime');
+  $('#aboutPaths').textContent = t('aboutPaths');
+  $('#aboutPools').textContent = t('aboutPools');
+  $('#aboutSource').textContent = t('aboutSource');
+
+  $('#runtimeTable').innerHTML = [
+    `<tr><td>${esc(t('vVersion'))}</td><td><code>${esc(state.version || '')}</code></td></tr>`,
+    `<tr><td>${esc(t('vPlatform'))}</td><td><code>${esc(state.platform || '')}</code></td></tr>`,
+    `<tr><td>${esc(t('vNode'))}</td><td><code>${esc(rt.node || '')}</code></td></tr>`,
+    rt.electron ? `<tr><td>${esc(t('vElectron'))}</td><td><code>${esc(rt.electron)}</code></td></tr>` : '',
+  ].join('');
+
+  $('#pathsTable').innerHTML = [
+    pathRow(t('pHome'), p.home, 'home', true),
+    pathRow(t('pDshHome'), p.dshHome, 'dshHome'),
+    pathRow(t('pDshSkills'), p.dshSkills, 'dshSkills'),
+    pathRow(t('pPatch'), p.patchFile, 'patchFile'),
+    pathRow(t('pDisabled'), p.disabledFile, 'disabledFile'),
+    pathRow(t('pCcHome'), p.ccHome, 'ccHome'),
+    pathRow(t('pCcDb'), p.ccDb, 'ccDb'),
+  ].join('');
+
+  $('#poolsTable').innerHTML = (state.pools || []).map((pool) =>
+    `<tr><td>${esc(pool.label || pool.source)}</td><td><code title="${esc(pool.dir)}">${esc(short(pool.dir))}</code> <button class="mini" data-open="pool:${esc(pool.id)}">${esc(t('open'))}</button></td></tr>`,
+  ).join('') || `<tr><td colspan="2">${esc(t('notConfigured'))}</td></tr>`;
+
+  const cc = state.ccSwitch || {};
+  $('#sourceBody').innerHTML = `
+    <div>${t('sourceCc', cc.available)}</div>
+    ${cc.available && cc.agents?.length ? `<div>${t('sourceCcAgents', esc(cc.agents.join(', ')))}</div>` : ''}
+    <div style="margin-top:8px">${t('sourcePatch', esc(short(state.mcpMeta?.files?.patch)), esc(short(state.mcpMeta?.files?.disabled)))}</div>
+    <div style="margin-top:8px">${t('sourceSafety')}</div>
+    <div style="margin-top:8px">${t('sourceTokens')}</div>
+    <div style="margin-top:8px"><a href="${REPO}" target="_blank" rel="noopener">${t('project')}</a></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === b));
+  $('#view-skills').style.display = tab === 'skills' ? '' : 'none';
+  $('#view-mcp').style.display = tab === 'mcp' ? '' : 'none';
+  $('#view-about').style.display = tab === 'about' ? '' : 'none';
+}));
+
+$('#refresh').addEventListener('click', () => load(true));
+$('#lang').addEventListener('click', () => {
+  lang = lang === 'zh-CN' ? 'en' : 'zh-CN';
+  localStorage.setItem('dshcp.lang', lang);
+  render();
+});
+$('#q').addEventListener('input', renderSkills);
+$('#qm').addEventListener('input', renderMcp);
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-open]');
+  if (!el) return;
+  const target = el.getAttribute('data-open');
+  if (target) openTarget(target);
+});
+
+document.addEventListener('change', async (e) => {
+  const el = e.target;
+  if (!/^(sk|mc)-/.test(el.id)) return;
+  const enabled = el.checked;
+  el.disabled = true;
+  try {
+    if (el.dataset.kind === 'skill') {
+      const r = await api('/api/skills/toggle', {
+        key: el.dataset.key, enabled, poolDir: el.dataset.pool || undefined,
+      });
+      if (r.note) toast(r.note);
+    } else {
+      const r = await api('/api/mcp/toggle', { key: el.dataset.key, enabled });
+      if (r.note) toast(r.note);
+    }
+    await load(false);
+  } catch (err) {
+    toast(t('opFailed', err.message));
+    el.checked = !enabled;
+    el.disabled = false;
+  }
+});
+
+async function bulk(enabled) {
+  const q = $('#q').value.trim().toLowerCase();
+  const targets = state.skills
+    .filter((k) => !q || (k.name + ' ' + k.dirName + ' ' + (k.description || '')).toLowerCase().includes(q))
+    .filter((k) => (enabled ? k.canEnable : k.canDisable))
+    .map((k) => ({ key: k.key, poolDir: k.poolDir || undefined }));
+  if (!targets.length) return toast(t('nothingToDo'));
+  const verb = enabled ? t('enable') : t('disable');
+  if (!confirm(t('confirmBulk', verb, targets.length))) return;
+  try {
+    const r = await api('/api/skills/bulk', { items: targets, enabled });
+    toast(t('bulkDone', r.results.length - r.failed, r.failed));
+    await load(false);
+  } catch (err) { toast(t('opFailed', err.message)); }
+}
+$('#skOff').addEventListener('click', () => bulk(false));
+$('#skOn').addEventListener('click', () => bulk(true));
+
+load(false);
+</script>
+</body>
+</html>

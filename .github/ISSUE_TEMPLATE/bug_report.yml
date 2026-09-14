@@ -1,0 +1,85 @@
+name: Bug report
+description: Something did not work the way the README says it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The fields below are the ones that usually decide
+        whether the issue can be reproduced at all.
+
+        **Redact your own profile before pasting anything.** Skill names,
+        repository URLs and the contents of `cordis.patch.yml` are personal.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues and this is not a duplicate
+          required: true
+        - label: I redacted my own paths, skill names and repository URLs
+          required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How are you running it?
+      options:
+        - Prebuilt desktop app (installer / portable)
+        - Desktop app from source (npm run desktop)
+        - Browser mode (node src/cli.mjs)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the About tab, or `node src/cli.mjs --version`
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and Node version
+      placeholder: Windows 11 24H2 · Node 24.15.0
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: If a skill or MCP server was involved, say which of the two tabs.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the MCP tab
+        2. Toggle ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Resolved paths
+      description: Paste the output of `node src/cli.mjs --print-config`, redacted.
+      render: json
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: Desktop app → `Help → Reveal log file`. Redact before pasting.
+      render: shell
+    validations:
+      required: false
