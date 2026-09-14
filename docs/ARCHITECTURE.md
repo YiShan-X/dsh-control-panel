@@ -131,11 +131,16 @@ colour icon otherwise, and re-picks on `nativeTheme` changes.
 
 ## Testing
 
-70 tests, no framework — `node --test` and `node:assert`.
+Around 110 tests, no framework — `node --test` and `node:assert`. The exact
+count is deliberately not written down anywhere but here, and only loosely: it
+has drifted out of three documents at once before.
 
 The unit tests cover the parsers where the bugs actually live: YAML frontmatter
 (including the block scalars and the kebab-case rule), the delimited-block
-editor, and the cc-switch → DSH converter.
+editor, the cc-switch → DSH converter, and the `dsh web` process layer
+(executable resolution, npm-shim unwrapping, the boot-time cache). Those last
+ones are written to run on any host, because the same suite has to pass on CI
+runners that have no `dsh` installed and no Windows under them.
 
 The integration tests create a throwaway profile in the OS temp directory with
 real skills, real junctions and a real patch file, then drive the HTTP API over

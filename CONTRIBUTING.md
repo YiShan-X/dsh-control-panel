@@ -10,7 +10,7 @@ reproduction.
 git clone https://github.com/YiShan-X/dsh-control-panel.git
 cd dsh-control-panel
 npm install
-npm test          # 70 tests, should be green before and after your change
+npm test          # should be green before and after your change
 npm run smoke     # boots the real desktop window and exits
 ```
 
