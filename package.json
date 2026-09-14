@@ -21,6 +21,7 @@
     "url": "git+https://github.com/YiShan-X/dsh-control-panel.git"
   },
   "license": "MIT",
+  "desktopName": "io.github.yishan-x.dsh-control-panel.desktop",
   "author": {
     "name": "YiShan-X",
     "email": "80139158+YiShan-X@users.noreply.github.com"
@@ -134,7 +135,7 @@
       "icon": "build/icon.png",
       "category": "Development",
       "synopsis": "Toggle DSH skills and MCP servers",
-      "desktopName": "io.github.yishan-x.dsh-control-panel.desktop",
+      "maintainer": "YiShan-X <80139158+YiShan-X@users.noreply.github.com>",
       "syncDesktopName": true,
       "target": [
         {
