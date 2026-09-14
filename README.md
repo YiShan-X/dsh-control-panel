@@ -55,6 +55,11 @@ reload, so the panel instead *tells you* when a restart is genuinely pending —
 compares the patch file's mtime against the running `dsh web` process start time.
 If you have not changed anything, it stays quiet.
 
+The **DSH** tab is where that restart happens: it reports the running service
+(pid, uptime, command line) and can start, stop or restart it. It is the only
+place in the app that manages a process rather than a file, so it is also the
+only place that warns you before acting.
+
 ---
 
 ## How this differs from the other DSH tools
@@ -231,12 +236,31 @@ environment; browser mode additionally accepts `--port` and `--host`.
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | Parked MCP blocks |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch home |
 | `DSH_PANEL_CC_SWITCH` | `1` | Set to `0` to ignore cc-switch entirely |
+| `DSH_WEB_CMD` | `dsh web` | Command the **DSH** tab's Start button runs |
+| `DSH_PANEL_NO_CONTROL` | `0` | Set to `1` to disable start/stop/restart of `dsh web` |
+| `DSH_PANEL_PROBE_WEB` | `1` | Set to `0` to stop probing for a running `dsh web` |
 | `DSH_PANEL_PORT` | `8791` | Browser-mode port (desktop mode picks a free one) |
 | `DSH_PANEL_HOST` | `127.0.0.1` | Browser-mode bind address |
 | `DSH_PANEL_POLL_MS` | `30000` | UI auto-refresh interval |
 
 When `DSH_SKILL_POOL` is not set, the pools are the cc-switch skill pool
 (`~/.cc-switch/skills`) followed by `$DSH_HOME/skill-pool`.
+
+### The DSH tab controls the service
+
+The **DSH** tab reports the running `dsh web` (pid, uptime, command line, probe
+cost) and can start, stop or restart it. Two things are worth knowing:
+
+- **Restarting `dsh web` disconnects anything using it**, including the DSH web
+  UI this panel may have been launched from, and the AI session attached to it.
+  The panel says so before it acts.
+- A **restart replays the command line the running process was started with**,
+  so `dsh web --port 3080` keeps its port. If that command no longer resolves on
+  this machine — a switched Node version manager is the usual cause — the panel
+  falls back to `DSH_WEB_CMD` and tells you, rather than failing silently.
+
+`DSH_PANEL_NO_CONTROL=1` turns the tab into a read-only reporter: the buttons
+render disabled with the reason instead of failing on click.
 
 ### The configuration hub is optional
 
@@ -261,10 +285,10 @@ mixed on the same files without either corrupting the other.
 ## Development
 
 ```bash
-npm test              # 70 unit + integration tests, no test framework
+npm test              # unit + integration tests, no test framework
 npm run smoke         # boot the real Electron window, then exit
 npm run screenshot    # regenerate docs/ using synthetic demo data
-npm run icons         # regenerate build/ icons (hand-written PNG/ICO encoder)
+npm run icons         # install build/ icons from the design exports in assets/
 npm run pack          # electron-builder --dir, unpacked, for quick checks
 ```
 
@@ -282,6 +306,7 @@ src/
     mcp.mjs          MCP model, cc-switch -> DSH converter
     patch.mjs        the delimited-block editor
     ccswitch.mjs     optional read-only SQLite source
+    dsh.mjs          dsh web process probe, cache and lifecycle
     server.mjs       createPanelServer() -- the HTTP layer
   cli.mjs          browser mode
   desktop/main.mjs Electron main process
@@ -295,7 +320,15 @@ scripts/           icon generator, smoke test, screenshot generator
 
 **I toggled an MCP server and nothing happened.**
 Working as intended — restart `dsh web`. The banner at the top of the MCP tab
-tells you whether a restart is pending.
+tells you whether a restart is pending, and the DSH tab's **Restart** button does
+it (with the warning that it interrupts the current AI session).
+
+**The DSH tab says "not running" but `dsh web` is clearly up.**
+The probe looks for a `node.exe` process whose command line mentions both `dsh`
+and `web`. A service started under a different executable name or wrapper will
+not be found; set `DSH_WEB_CMD` so the Start button can still launch it. If the
+status dot is grey with "not probed", probing was switched off with
+`DSH_PANEL_PROBE_WEB=0`.
 
 **The page is blank.**
 Open the About tab, or hit `http://127.0.0.1:8791/api/state` directly in browser

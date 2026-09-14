@@ -109,8 +109,12 @@ export async function readCcSwitch(config) {
       'SELECT id, name, server_config, description, tags FROM mcp_servers ORDER BY name',
     );
     const repos = all(db, 'SELECT owner, name, branch, enabled FROM skill_repos');
+    // The `providers` table exists in modern cc-switch builds; older ones do
+    // not have it, so a missing-table error must NOT take the whole panel
+    // down -- the rest of the read is still useful.
+    const providers = readProviders(db);
 
-    return { available: true, reason: null, skills, mcpServers, repos, agents };
+    return { available: true, reason: null, skills, mcpServers, repos, providers, agents };
   } catch (err) {
     log(`WARN cannot read cc-switch DB: ${err.message}`);
     return { ...EMPTY, reason: `cannot read cc-switch DB: ${err.message}` };
@@ -143,4 +147,82 @@ function all(db, sql) {
     log(`WARN cc-switch query failed: ${err.message}`);
     return [];
   }
+}
+
+/**
+ * Read cc-switch's provider rows. Older cc-switch builds may not have this
+ * table at all, so a missing-table error is logged and the result degrades
+ * to `[]` instead of taking the whole read down.
+ */
+function readProviders(db) {
+  try {
+    return db.prepare(
+      'SELECT id, name, app_type, settings_config, is_current FROM providers ORDER BY name',
+    ).all().map((row) => {
+      let parsed = null;
+      let parseError = null;
+      if (row.settings_config) {
+        try { parsed = JSON.parse(row.settings_config); }
+        catch (err) { parseError = err.message; }
+      }
+      // Extract the bits the Models tab actually needs: the base URL and the
+      // model ids. Auth tokens are deliberately NOT exposed to the importer
+      // so a UI button cannot accidentally write a secret to settings.yaml --
+      // the user has to bind an env var themselves.
+      const env = parsed && typeof parsed === 'object' && parsed.env && typeof parsed.env === 'object'
+        ? parsed.env
+        : {};
+      const baseURL = pickFirst(env, [
+        'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL', 'BASE_URL',
+      ]);
+      const models = pickModels(env);
+      const hasAuthToken = pickFirst(env, [
+        'ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'API_KEY', 'AUTH_TOKEN',
+      ]) != null;
+      return {
+        id: row.id,
+        name: row.name,
+        appType: row.app_type,
+        isCurrent: Boolean(row.is_current),
+        baseURL,
+        models,
+        hasAuthToken,
+        parseError,
+      };
+    });
+  } catch (err) {
+    log(`WARN cc-switch providers query failed: ${err.message}`);
+    return [];
+  }
+}
+
+/** Return the first non-empty value among the candidate env-var names. */
+function pickFirst(obj, names) {
+  for (const n of names) {
+    const v = obj[n];
+    if (typeof v === 'string' && v.trim() !== '') return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Pull a deduplicated list of model ids out of a `settings_config.env` blob.
+ * Anthropic-flavoured configs spell the default model three times (one for
+ * each tier); other CLIs use just one. Either way the importer wants every
+ * distinct id it can find.
+ */
+function pickModels(env) {
+  const out = new Set();
+  for (const k of [
+    'ANTHROPIC_MODEL',
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    'OPENAI_MODEL',
+    'MODEL',
+  ]) {
+    const v = env[k];
+    if (typeof v === 'string' && v.trim() !== '') out.add(v.trim());
+  }
+  return [...out];
 }

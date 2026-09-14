@@ -5,6 +5,113 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-14
+
+### Added
+
+- **DSH service control.** Every `/api/dsh/*` route was gated on the desktop-only
+  `restartHook`, so the DSH tab's three buttons were permanently dead, and in
+  browser mode the panel could not manage the service it exists to manage at all.
+  Control is now its own injected `dshControl` bundle wired by both hosts, and
+  `DSH_PANEL_NO_CONTROL=1` degrades a host to a read-only reporter that says so
+  instead of offering a button that fails.
+- **"Restart dsh web now" button** (`#8`). The MCP restart banner used to say
+  "kill it yourself and relaunch"; the panel now does it. The respawn tokenises
+  the captured cmdline itself and calls `spawn` directly, so no `cmd.exe` window
+  flashes up on Windows; stderr is captured so a failed relaunch leaves a
+  breadcrumb in the panel log instead of vanishing.
+- **System tray icon** (`#7`). The desktop window no longer kills the app when
+  closed -- a tray icon keeps it alive, left-click brings the window back,
+  right-click opens a menu with the same DSH paths the menu bar shows plus a real
+  Quit. Smoke runs skip the tray so a CI host never picks up a leftover icon.
+  The tray image follows the OS theme: the monochrome glyph on a dark taskbar,
+  the full colour icon on a light one, re-picked on `nativeTheme` changes.
+- **`$DSH_SETTINGS_FILE`** environment variable (default `$DSH_HOME/settings.yaml`),
+  so a config can be repointed without symlinking the file.
+
+### Changed
+
+- **The icon set was refreshed from the design sources.** `assets/*.svg` (app
+  tile, 16-32 px variant, monochrome tray glyph) plus the tool's own PNG/ICO
+  exports now live in the repository, and `scripts/make-icons.mjs` installs them
+  into `build/`, verifying each export is a real 1024x1024 PNG / complete ICO
+  container rather than redrawing the artwork a second time. The tray uses the
+  new glyph instead of a rescaled app icon.
+- **Default window size shrunk from 1240x860 to 920x700** (`#9`). The first
+  launch no longer fills half the screen with empty space. Existing
+  `window-state.json` files keep whatever the user last resized to.
+- `window-all-closed` no longer quits the app on non-darwin: the tray owns
+  the lifecycle now. Real shutdowns come from the tray menu.
+
+### Fixed
+
+- **Starting `dsh web` from the panel opened a console window that stayed for
+  the service's whole life.** Wrapping the `.cmd` shim through `cmd /c` fixed the
+  ENOENT below but not the noise: `cmd` itself stayed hidden while the console
+  application it launched got a *visible* console allocated for it. Measured
+  rather than assumed — the launched `node` reported a non-zero
+  `MainWindowHandle`. The npm shim is now unwrapped to the command it actually
+  stands for (`node .../dsh/lib/bin.js web`, following the shim's own `%_prog%`
+  branch) and spawned directly, which libuv creates with `CREATE_NO_WINDOW`; the
+  same measurement now reports `MainWindowHandle=0`. A shim the parser does not
+  understand still falls back to `cmd /c`, just noisily.
+- **"Start dsh web" failed with `spawn dsh ENOENT` on Windows.** `dsh` is a
+  `dsh.cmd` shim there, and libuv cannot start a `.cmd` file directly — the same
+  trap `mcp.mjs` had always handled for `npx`, which the DSH start path never
+  got. The command is now resolved to a file Windows can actually launch (a real
+  `.exe` wins over a wrapper) and routed through `cmd /c` when it is a shim.
+  Resolution also stops being a bare existence check: `where dsh` lists the
+  extensionless POSIX shim first, and resolving to *that* reproduced the very
+  ENOENT being fixed. A command that genuinely is not on PATH now fails with a
+  sentence naming it — plus the `DSH_WEB_CMD` hint — instead of a bare libuv
+  code, and the spawn result is awaited rather than inferred from a timer.
+- **The DSH tab rendered raw translation keys instead of labels.** Its
+  renderer asked for 21 keys — `dshPageTitle`, `dshRunning`,
+  `dshControlUnavailable` and friends — that existed in neither dictionary, and
+  `t()` falls back to the key name, so the page title, the three stat labels,
+  every button hint and every action toast displayed as `dshControlUnavailable`.
+  All 21 keys now exist in `en` and `zh-CN`, along with the three control button
+  labels, which had been hardcoded in Chinese and stayed Chinese in the English
+  UI. `test/ui.test.mjs` now fails if any `t('…')` key is missing from either
+  dictionary, or if the two dictionaries define different key sets.
+- **The DSH tab was three permanently dead buttons in browser mode.** Every
+  `/api/dsh/*` route was gated on the desktop-only `restartHook`, so
+  `node src/cli.mjs` could not start, stop or restart the service it exists to
+  manage. Control is now its own injected `dshControl` bundle wired by both
+  hosts, and a host that genuinely cannot manage a process renders the buttons
+  disabled with the reason instead of failing on click. `DSH_PANEL_NO_CONTROL=1`
+  opts out.
+- **A restart replayed a command line that could be stale.** The captured
+  command line is a snapshot of an earlier session: a machine that switched Node
+  version managers still reports the old absolute `node.exe`, and replaying it
+  failed with ENOENT. The executable is now resolved before it is replayed, and
+  the panel falls back to `DSH_WEB_CMD` with a visible warning.
+- The MCP restart banner could show stale content for up to 20 s after a
+  programmatic restart; the new route invalidates the web-start cache so the
+  banner refreshes immediately.
+
+### Changed
+
+- **The DSH tab is a real service panel.** It now shows uptime, CPU time and
+  resident memory alongside status, PID and start time; it distinguishes "not
+  running" from "not probed"; it names the command the Start button would run and
+  where that command came from; it warns, before you act, that restarting
+  `dsh web` disconnects the page and interrupts the running AI session; and it
+  reports what was *observed* after an action rather than what was attempted
+  (a start whose process never appeared is an error, not a success with a
+  caveat).
+- **Process probing is one call and one cache, not two.** `mcp.mjs` had its own
+  copy of the `dsh web` filter and boot-time probe; both now live in
+  `src/core/dsh.mjs`, so the MCP restart banner and the DSH tab cannot disagree
+  about whether the service is up. A single `/api/state` request probes once.
+  The probe is measured once per 15 s of polling, re-probes immediately after a
+  mutating action, and is floored to one OS call per 250 ms so a client hammering
+  `?fresh=1` cannot fork PowerShell per request. Both hosts warm the cache at
+  startup, so the first paint is not blocked behind a PowerShell round trip.
+- Stopping `dsh web` no longer always waits out the full 2 s grace period: the
+  pid is polled and the force-kill step is skipped as soon as the process is
+  gone, and a forced kill is reported as such.
+
 ## [1.1.0] - 2026-09-14
 
 ### Added

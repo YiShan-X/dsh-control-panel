@@ -115,9 +115,19 @@ Upstream adding an agent does not require a change here.
 runtime dependencies. It is served straight off disk by the same process that
 serves the API, which keeps the desktop build to "wrap the server in a window".
 
-**Icons are generated, not checked in as opaque binaries.** `scripts/make-icons.mjs`
-is a hand-written PNG encoder (zlib + CRC32 from Node's standard library) and an
-ICO container writer. The artwork is code, so it is reviewable and diffable.
+**Icons come from the design tool, and the script verifies rather than redraws.**
+`assets/*.svg` is the artwork (app tile, 16-32 px variant, monochrome tray
+glyph); `assets/*.png` and `assets/icon.ico` are that tool's exports, and
+`scripts/make-icons.mjs` installs them into `build/`. An earlier version rasterized
+the SVGs in-process with a hand-written PNG encoder; that was a *second*
+implementation of the artwork, free to disagree with the designer's own export,
+and it was replaced. What survives is the checking: the script refuses to
+install an export that is not a real PNG/ICO container, is not 1024x1024, or
+does not carry every ICO size the packaging config promises.
+
+**The tray icon is theme-aware.** The monochrome glyph is white, which vanishes
+on a light taskbar, so the tray picks the glyph on a dark theme and the full
+colour icon otherwise, and re-picks on `nativeTheme` changes.
 
 ## Testing
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-control-panel",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "DSH desktop control panel: toggle the skills and MCP servers that cost tokens on every model request. Live soft-routes your existing cc-switch skill pool instead of importing copies, and works fine without cc-switch.",
   "keywords": [
     "dsh",
@@ -37,6 +37,7 @@
   "files": [
     "src",
     "public",
+    "assets",
     "README.md",
     "LICENSE"
   ],
@@ -75,6 +76,16 @@
     "extraMetadata": {
       "main": "src/desktop/main.mjs"
     },
+    "extraResources": [
+      {
+        "from": "build",
+        "to": "build",
+        "filter": [
+          "icon.png",
+          "icon-mono.png"
+        ]
+      }
+    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [

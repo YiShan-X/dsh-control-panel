@@ -221,6 +221,374 @@
   }
   .card h2 { font-size: 13px; margin: 0 0 10px; color: var(--fg-dim); font-weight: 600;
              text-transform: uppercase; letter-spacing: .6px; }
+
+  /* ------------------------------------------------------------------ */
+  /* Models tab: card grid + modal                                      */
+  /* ------------------------------------------------------------------ */
+
+  /* Stats overview at the top of the Models tab. One row, three cells,
+     each a small filled rectangle with a label and a value. */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat {
+    padding: 12px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat .label {
+    font-size: 11px;
+    color: var(--fg-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .stat .value {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat .value code {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg-dim);
+    font-weight: 500;
+  }
+
+  /* Card grid: a responsive grid of model cards. The list view the rest
+     of the panel uses is fine for skills/MCP, but a model catalog wants
+     a denser grid where each card shows the same shape. */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+  }
+
+  /* Status dot: small filled circle, used to show "this is the active
+     default" at a glance without dominating the card. */
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--off);
+    flex-shrink: 0;
+  }
+  .status-dot.on { background: var(--on); box-shadow: 0 0 0 3px rgba(53, 192, 122, 0.15); }
+  .status-dot.warn { background: var(--warn); }
+  .status-dot.err { background: var(--err); }
+
+  /* Empty state inside a card body. */
+  .empty-card {
+    padding: 32px;
+    text-align: center;
+    color: var(--fg-faint);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+  }
+  .empty-card .hint {
+    font-size: 12px;
+    margin-top: 6px;
+    color: var(--fg-faint);
+  }
+
+  /* Modal: full-screen overlay with a centred card. The shadow + blur is
+     what makes the form feel "lifted" off the page instead of dropped in
+     mid-air. */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    z-index: 100;
+    padding: 60px 16px 16px;
+    overflow-y: auto;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 600px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-header h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--fg);
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--fg-dim);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 6px;
+    line-height: 1;
+  }
+  .modal-close:hover { color: var(--fg); background: none; }
+  .modal-body { padding: 18px 20px; }
+  .modal-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg);
+  }
+  .modal-footer .err {
+    color: var(--err);
+    font-size: 12.5px;
+    margin-right: auto;
+  }
+
+  /* Form layout inside the modal. Each row is a label + control; the
+     label column is fixed-width so the inputs line up. */
+  .form-section {
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .form-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+  .form-section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    margin: 0 0 10px;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .form-row > label {
+    font-size: 12.5px;
+    color: var(--fg-dim);
+    text-align: right;
+  }
+  .form-row input,
+  .form-row select,
+  .form-row textarea {
+    font: inherit;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 10px;
+    width: 100%;
+    font-size: 13px;
+  }
+  .form-row input:focus,
+  .form-row select:focus,
+  .form-row textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .form-row input:disabled,
+  .form-row select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .form-hint {
+    font-size: 11.5px;
+    color: var(--fg-faint);
+    margin-top: 4px;
+  }
+  .form-hint.warn { color: var(--warn); }
+  .checkbox-row {
+    display: flex;
+    gap: 16px;
+  }
+  .checkbox-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--fg);
+  }
+
+  /* Page header: title on the left, a single primary action on the right.
+     Used at the top of the Models tab. */
+  .page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .page-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 2px;
+    color: var(--fg);
+    letter-spacing: 0;
+  }
+  .page-header button {
+    flex-shrink: 0;
+  }
+
+  /* Provider card: a stacked group, one per provider. Header row carries the
+     name, status dot, edit / delete actions. Body is a list of the models
+     under this provider, each row compact. */
+  .provider-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .provider-card.is-bad { border-color: var(--row-bad-line); }
+  .provider-card .provider-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .provider-card .provider-head .name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .provider-card .provider-head .name code {
+    font-family: var(--mono);
+    font-size: 13.5px;
+  }
+  .provider-card .provider-head .meta {
+    font-size: 12px;
+    color: var(--fg-faint);
+    font-family: var(--mono);
+  }
+  .provider-card .provider-head .head-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .provider-card .provider-head .head-actions button {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+  .provider-card .model-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 16px;
+    border-top: 1px solid var(--line);
+    transition: background .1s;
+  }
+  .provider-card .model-row:first-of-type { border-top: none; }
+  .provider-card .model-row:hover { background: var(--panel-2); }
+  .provider-card .model-row .model-name {
+    font-size: 13px;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .provider-card .model-row .model-name code {
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .provider-card .model-row .model-meta {
+    font-size: 11.5px;
+    color: var(--fg-faint);
+    font-family: var(--mono);
+  }
+  .provider-card .model-row .row-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .provider-card .model-row .row-actions button {
+    font-size: 11.5px;
+    padding: 3px 9px;
+  }
+  .provider-card .add-model-row {
+    padding: 8px 16px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .provider-card .add-model-row button {
+    font-size: 12px;
+    padding: 4px 12px;
+    color: var(--fg-dim);
+  }
+  .provider-card .add-model-row button:hover { color: var(--fg); }
+
+  /* Two dashed add-cards at the bottom of the page, side by side. They
+     look like "drop zones" but are actually buttons -- this is the
+     "I'm ready to add something" affordance the screenshot asked for. */
+  .add-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .add-card {
+    background: transparent;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 18px;
+    color: var(--fg-dim);
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .add-card:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--panel);
+  }
+
+  /* In provider-edit mode the "Model" form section is irrelevant -- the
+     user is only editing api / baseURL / apiKeyEnv. Hiding it via a
+     body class is cheaper than a DOM rebuild, and the same selector can
+     also dim the unrelated adapter dropdown if we want to. */
+  body.editing-provider .form-section[data-form-section="model"] {
+    display: none;
+  }
+  /* "+ Add custom provider" hides the preset section so the user goes
+     straight to the empty form. The regular "+ Add provider" keeps it
+     visible so a one-click preset fill-in does the bulk of the typing. */
+  body.custom-mode #formSectionPreset {
+    display: none;
+  }
 </style>
 </head>
 <body>
@@ -236,6 +604,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="skills">Skills <span class="n" id="nSkills"></span></button>
     <button class="tab" data-tab="mcp">MCP <span class="n" id="nMcp"></span></button>
+    <button class="tab" data-tab="dsh" id="tabDsh">DSH</button>
     <button class="tab" data-tab="about" id="tabAbout"></button>
   </div>
 </header>
@@ -265,6 +634,64 @@
       <input type="search" id="qm" />
     </div>
     <div class="list" id="mcpList"></div>
+  </section>
+
+  <section id="view-dsh" style="display:none">
+    <div class="page-header">
+      <div>
+        <h1 id="dshPageTitle">DSH 服务</h1>
+        <div class="form-hint" id="dshPageHint">DSH web 进程控制。Skills / MCP 改动后也可在此重启。</div>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat">
+        <div class="label" id="dshStatusLabel">状态</div>
+        <div class="value">
+          <span class="status-dot" id="dshStatusDot"></span>
+          <span id="dshStatusText">—</span>
+        </div>
+      </div>
+      <div class="stat">
+        <div class="label" id="dshPidLabel">PID</div>
+        <div class="value" id="dshPid">—</div>
+      </div>
+      <div class="stat">
+        <div class="label" id="dshUptimeLabel">已运行</div>
+        <div class="value" id="dshUptime">—</div>
+      </div>
+      <div class="stat">
+        <div class="label" id="dshStartedAtLabel">启动时间</div>
+        <div class="value" id="dshStartedAt">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 id="dshControlTitle">控制</h2>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+        <button id="dshStartBtn" class="primary">Start dsh web</button>
+        <button id="dshStopBtn">Stop</button>
+        <button id="dshRestartBtn">Restart</button>
+      </div>
+      <div class="form-hint" id="dshControlHint" style="margin-top:8px"></div>
+      <div class="form-hint warn" id="dshControlWarn" style="margin-top:4px"></div>
+    </div>
+
+    <div class="card" id="dshErrorCard" style="display:none">
+      <h2 id="dshErrorTitle">最近错误</h2>
+      <pre id="dshLastError" style="margin:0; white-space:pre-wrap; font-size:12.5px"></pre>
+    </div>
+
+    <div class="card">
+      <h2 id="dshCmdlineTitle">命令行</h2>
+      <pre id="dshCmdline" style="margin:0; white-space:pre-wrap; font-size:12.5px; color:var(--fg-dim)">—</pre>
+      <div class="form-hint" id="dshStartCmd" style="margin-top:6px"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="dshRuntimeTitle">运行时</h2>
+      <table class="paths" id="dshRuntimeTable"></table>
+    </div>
   </section>
 
   <section id="view-about" style="display:none">
@@ -299,9 +726,54 @@ const I18N = {
     subtitle: 'Skills & MCP — switch off what you are not using',
     refresh: 'Refresh', refreshBusy: 'Loading…',
     themeToLight: 'Switch to light theme', themeToDark: 'Switch to dark theme',
-    tabSkills: 'Skills', tabMcp: 'MCP', tabAbout: 'About',
+    tabSkills: 'Skills', tabMcp: 'MCP', tabModels: 'Models', tabAbout: 'About',
     skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} on · ~<b>${t}</b> tok/request`,
     mcpChip: (a, b) => `MCP <b>${a}</b>/${b} on`,
+    dshPageTitle: 'DSH service',
+    dshPageHint: 'Control the dsh web process. Skills and MCP changes can be applied by restarting it from here.',
+    dshStartBtn: 'Start dsh web',
+    dshStopBtn: 'Stop',
+    dshRestartBtn: 'Restart',
+    dshStatusLabel: 'Status',
+    dshPidLabel: 'PID',
+    dshUptimeLabel: 'Uptime',
+    dshStartedAtLabel: 'Started',
+    dshControlTitle: 'Control',
+    dshErrorTitle: 'Last start error',
+    dshCmdlineTitle: 'Command line',
+    dshRuntimeTitle: 'Runtime',
+    dshRunning: 'running',
+    dshStopped: 'not running',
+    dshUnknown: 'unknown',
+    dshProbeDisabled: 'not probed (DSH_PANEL_PROBE_WEB=0)',
+    dshNotFound: 'No dsh web process was found by the probe. If it is running under a different executable name, set DSH_WEB_CMD so the panel can start it.',
+    dshControlUnavailable: 'This host cannot start, stop or restart dsh web. Launch the desktop app, or run "node src/cli.mjs" yourself (DSH_PANEL_NO_CONTROL=1 disables it).',
+    dshControlRunningHint: 'Starting is disabled while the service runs. Stop or restart it instead.',
+    dshControlStoppedHint: 'The panel will start it with the command shown below.',
+    dshRestartWarning: 'Restarting dsh web disconnects this page and interrupts any running AI session. Reopen the panel afterwards.',
+    dshStartCommand: (c, s) => `Start command: ${c} (${s})`,
+    dshCmdSourceDefault: 'built-in default',
+    dshCommandSourceEnv: 'from DSH_WEB_CMD',
+    dshDetected: 'detected process',
+    dshStarted: 'dsh web started.',
+    dshStartFailed: (m) => `Start failed: ${m}`,
+    dshStartNotAlive: (m) => `dsh web did not come up: ${m || 'no stderr output'}`,
+    dshStopConfirm: 'Stop dsh web? Every AI session using it will be interrupted.',
+    dshStopFailed: (m) => `Stop failed: ${m}`,
+    dshStopDone: 'dsh web stopped.',
+    dshRestartConfirm: 'Restart dsh web? This briefly interrupts the current AI session.',
+    dshRestarted: 'dsh web restarted.',
+    dshRestartFellBack: (c) => `The command line that was running (${c}) no longer resolves on this machine, so dsh web was restarted with the panel's own start command instead. Check the port and flags it needs.`,
+    dshRestartFailed: (m) => `Restart failed: ${m}`,
+    dshRestartNotAlive: (m) => `dsh web was stopped but did not come back up: ${m || 'no stderr output'}`,
+    dshNotProbed: 'Status probing is off, so the panel cannot tell whether dsh web is running.',
+    dshDialogNote: 'The confirmation dialogs are drawn by the OS, so they follow the system language rather than this page.',
+    dshUptimeDays: (d, h) => `${d}d ${h}h`,
+    dshUptimeHours: (h, m) => `${h}h ${m}m`,
+    dshUptimeMinutes: (m, s) => `${m}m ${s}s`,
+    dshUptimeSeconds: (s) => `${s}s`,
+    dshProbeMs: (n) => `Process probe took ${n} ms (cached up to 15 s).`,
+    dshCpu: (n) => `CPU ${n}`,
     skillsBannerTitle: 'Skill changes take effect immediately — no restart.',
     skillsBannerBody: (p) => `DSH's skill provider watches <code>${p}</code>; adding or removing a
       link there is reflected in the catalog on the very next request. Turning one off reclaims its
@@ -311,6 +783,10 @@ const I18N = {
     restartBannerTitle: 'The MCP composition changed, but the running <code>dsh web</code> has not restarted yet.',
     restartBannerBody: (a, b) => `Patch last modified ${a} · dsh web started ${b}.<br>
       Restart by quitting the current <code>dsh web</code> and running it again.`,
+    restartNow: 'Restart dsh web now',
+    restartDone: 'dsh web restarted.',
+    restartFailed: (m) => `Restart failed: ${m}`,
+    restartConfirm: 'Restart dsh web? It will briefly interrupt the current AI session.',
     invalidTitle: (n) => `${n} skill${n === 1 ? '' : 's'} will be silently dropped by DSH`,
     invalidBody: 'Missing or invalid frontmatter, or a non-kebab-case name. These never reach the catalog:',
     realDirsTitle: (n) => `${n} real director${n === 1 ? 'y' : 'ies'} (not links) in the DSH skill root`,
@@ -371,15 +847,126 @@ const I18N = {
     footPool: (p) => `Skill pools: <code>${p}</code>`,
     footSkillRoot: (p) => `Link target: <code>${p}</code>`,
     footPatch: (p) => `MCP patch: <code>${p}</code>`,
+    modelsBannerBody: (p) => `Reads <code>${p}</code>. Click a model to make it the active default. The switch takes effect on the next model request -- no restart.`,
+    modelsUnavailable: (r) => `Models are unavailable: ${r}`,
+    modelsCurrent: 'Active default',
+    modelsNone: 'No active default in agent-default-model.',
+    modelsAdapter: (a) => `Adapter: ${a}`,
+    modelsContext: (n) => `${n} ctx`,
+    modelsMaxTokens: (n) => `${n} out`,
+    modelsModalityText: 'text-only',
+    modelsModalityImage: 'text + image',
+    modelsApi: (a) => `API: ${a}`,
+    modelsApiKey: (e) => `key: ${e}`,
+    modelsBaseUrl: (u) => `URL: ${u}`,
+    modelsBudgetPixel: (n) => `image budget: ${n}px`,
+    modelsBudgetBytes: (n) => `image budget: ${n} bytes/req`,
+    modelsBudgetLow: 'image budget: low (512×512)',
+    modelsEffort: (e) => `effort: ${e}`,
+    modelsSwitched: 'Model switched.',
+    modelsSwitchFailed: (m) => `Switch failed: ${m}`,
+    modelsConfirm: (n, p) => `Switch the active default to ${n} (${p})?`,
+    modelsProviderMissing: 'no api/url/key on file -- adding one in settings.yaml is required',
+    modelsInUseTitle: 'Models currently in DSH',
+    modelsAddBtn: '＋ Add manually',
+    modelsCcTitle: 'Available in cc-switch (not yet imported)',
+    modelsCcUnavailable: (r) => `cc-switch listing is unavailable: ${r}`,
+    modelsCcEmpty: 'No cc-switch providers found, or all have already been imported.',
+    modelsCcImport: (n, m) => `Import ${m} into DSH (provider ${n})`,
+    modelsCcImported: 'Imported from cc-switch.',
+    modelsCcAuthToken: (e) => `auth token is in cc-switch only -- you must set env var ${e}`,
+    modelsAddTitle: 'Add a model to DSH',
+    modelsAddSubmit: 'Save',
+    modelsAddCancel: 'Cancel',
+    modelsAddPickProvider: 'Existing provider id or new one',
+    modelsAddErr: (m) => `Could not save: ${m}`,
+    modelsAddNeedProviderFields: 'New provider needs API key env var, API protocol and Base URL.',
+    modelsSetDefault: 'Set as default',
+    modelsInvalid: 'invalid',
+    searchModels: 'Search models…',
+    modelsSearchEmpty: (q) => `No models match ${JSON.stringify(q)}.`,
+    modelsNoneHint: 'Click "Add model" above to add one, or import from cc-switch below.',
+    active: 'active',
+    modelsEditTitle: 'Edit model',
+    modelsEditSubmit: 'Save changes',
+    modelsEditProviderTitle: 'Edit provider',
+    modelsEditProviderSubmit: 'Save provider',
+    modelsAddApiKeyHintEmpty: 'Name of the env var that holds the API key. DSH will not write the secret here.',
+    modelsAddApiKeyHintSet: (e, p) => `Set env var ${e} to your API key before using ${p}.`,
+    modelsAddAdapterTitle: 'Adapter',
+    modelsPageHint: 'Fill in the API key for each provider, then you can use its models.',
+    statProvidersLabel: 'Providers',
+    statModelsLabel: 'Models',
+    statActiveLabel: 'Active default',
+    modelsAddProvider: '+ Add provider',
+    modelsAddCustomProvider: '+ Add custom provider',
+    edit: 'Edit',
+    delete: 'Delete',
+    addModelUnder: 'add model',
+    modelsCountSingular: '1 model',
+    modelsCountPlural: (n) => `${n} models`,
+    modelsAddSaved: 'Saved.',
+    modelsEditSaved: 'Updated.',
+    modelsDeleted: 'Deleted.',
+    modelsDeleteModelConfirm: (k) => `Delete model ${k}? This cannot be undone.`,
+    modelsDeleteProviderConfirm: (k) => `Delete provider ${k} and all its models? This cannot be undone.`,
+    openConfigFile: 'Open config file',
+    presetCustom: '— Custom (fill in below) —',
+    presetHint: 'A preset fills api + baseURL. You can override any field after picking.',
   },
   'zh-CN': {
     title: 'DSH 控制台',
     subtitle: 'Skills 与 MCP · 按需开关',
     refresh: '刷新', refreshBusy: '加载中…',
     themeToLight: '切换到浅色主题', themeToDark: '切换到深色主题',
-    tabSkills: 'Skills', tabMcp: 'MCP', tabAbout: '关于',
+    tabSkills: 'Skills', tabMcp: 'MCP', tabModels: '模型', tabAbout: '关于',
     skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} 开 · ~<b>${t}</b> tok/请求`,
     mcpChip: (a, b) => `MCP <b>${a}</b>/${b} 开`,
+    dshPageTitle: 'DSH 服务',
+    dshPageHint: 'DSH web 进程控制。Skills / MCP 改完可以在这里重启它来生效。',
+    dshStartBtn: '启动 dsh web',
+    dshStopBtn: '停止',
+    dshRestartBtn: '重启',
+    dshStatusLabel: '状态',
+    dshPidLabel: 'PID',
+    dshUptimeLabel: '已运行',
+    dshStartedAtLabel: '启动时间',
+    dshControlTitle: '控制',
+    dshErrorTitle: '最近一次启动错误',
+    dshCmdlineTitle: '命令行',
+    dshRuntimeTitle: '运行时',
+    dshRunning: '运行中',
+    dshStopped: '未运行',
+    dshUnknown: '未知',
+    dshProbeDisabled: '未探测（DSH_PANEL_PROBE_WEB=0）',
+    dshNotFound: '没有探测到 dsh web 进程。如果它是以别的可执行名启动的，请设置 DSH_WEB_CMD，面板才能启动它。',
+    dshControlUnavailable: '当前宿主无法启动 / 停止 / 重启 dsh web。请使用桌面版，或自己执行 "node src/cli.mjs"（设 DSH_PANEL_NO_CONTROL=1 可关闭该能力）。',
+    dshControlRunningHint: '服务运行中，启动按钮不可用；要换一份配置请点停止或重启。',
+    dshControlStoppedHint: '面板会用下面这条命令启动它。',
+    dshRestartWarning: '重启 dsh web 会断开当前页面，并打断正在进行的 AI 会话，之后请重新打开面板。',
+    dshStartCommand: (c, s) => `启动命令：${c}（${s}）`,
+    dshCmdSourceDefault: '内置默认值',
+    dshCommandSourceEnv: '来自 DSH_WEB_CMD',
+    dshDetected: '探测到的进程',
+    dshStarted: 'dsh web 已启动。',
+    dshStartFailed: (m) => `启动失败：${m}`,
+    dshStartNotAlive: (m) => `dsh web 没有起来：${m || '没有 stderr 输出'}`,
+    dshStopConfirm: '确认停止 dsh web？所有使用它的 AI 会话都会被中断。',
+    dshStopFailed: (m) => `停止失败：${m}`,
+    dshStopDone: 'dsh web 已停止。',
+    dshRestartConfirm: '确认重启 dsh web？会短暂打断当前的 AI 会话。',
+    dshRestarted: 'dsh web 已重启。',
+    dshRestartFellBack: (c) => `原来运行中的命令（${c}）在这台机器上已经无法解析，因此改用面板自己的启动命令重启了 dsh web。请确认它需要的端口和参数。`,
+    dshRestartFailed: (m) => `重启失败：${m}`,
+    dshRestartNotAlive: (m) => `dsh web 已停止但没能重新起来：${m || '没有 stderr 输出'}`,
+    dshNotProbed: '状态探测已关闭，面板无法判断 dsh web 是否在运行。',
+    dshDialogNote: '确认弹窗由系统绘制，语言跟随系统而不是本页面。',
+    dshUptimeDays: (d, h) => `${d} 天 ${h} 小时`,
+    dshUptimeHours: (h, m) => `${h} 小时 ${m} 分`,
+    dshUptimeMinutes: (m, s) => `${m} 分 ${s} 秒`,
+    dshUptimeSeconds: (s) => `${s} 秒`,
+    dshProbeMs: (n) => `进程探测耗时 ${n} ms（进程信息最多缓存 15 秒）。`,
+    dshCpu: (n) => `CPU ${n}`,
     skillsBannerTitle: 'Skills 改动立即生效，无需重启。',
     skillsBannerBody: (p) => `DSH 的 skill provider 会监听 <code>${p}</code>，加/删软链接即刻反映到 catalog；
       关掉一个 skill 就省掉它每个请求的描述开销。`,
@@ -388,6 +975,10 @@ const I18N = {
     restartBannerTitle: 'MCP 配置已改，但运行中的 <code>dsh web</code> 还没重启，改动尚未生效。',
     restartBannerBody: (a, b) => `patch 最后修改：${a} · dsh web 启动：${b}<br>
       重启方法：先退出当前 <code>dsh web</code>，再重新执行。`,
+    restartNow: '立即重启 dsh web',
+    restartDone: 'dsh web 已重启。',
+    restartFailed: (m) => `重启失败: ${m}`,
+    restartConfirm: '确认重启 dsh web？会短暂打断当前的 AI 会话。',
     invalidTitle: (n) => `${n} 个 skill 会被 DSH 静默丢弃`,
     invalidBody: '缺 frontmatter、字段不全，或名字不是 kebab-case。它们即使开了也不会进入 catalog：',
     realDirsTitle: (n) => `DSH skill 根目录下有 ${n} 个真实目录（非软链接）`,
@@ -448,6 +1039,72 @@ const I18N = {
     footPool: (p) => `skill 池：<code>${p}</code>`,
     footSkillRoot: (p) => `链接目标：<code>${p}</code>`,
     footPatch: (p) => `MCP patch：<code>${p}</code>`,
+    modelsBannerBody: (p) => `读取 <code>${p}</code>。点击任一模型即可设为当前默认；下次模型请求即生效，无需重启。`,
+    modelsUnavailable: (r) => `模型面板不可用：${r}`,
+    modelsCurrent: '当前默认',
+    modelsNone: 'agent-default-model 暂未设置。',
+    modelsAdapter: (a) => `适配器：${a}`,
+    modelsContext: (n) => `上下文 ${n}`,
+    modelsMaxTokens: (n) => `输出 ${n}`,
+    modelsModalityText: '纯文本',
+    modelsModalityImage: '文本 + 图片',
+    modelsApi: (a) => `API：${a}`,
+    modelsApiKey: (e) => `key：${e}`,
+    modelsBaseUrl: (u) => `URL：${u}`,
+    modelsBudgetPixel: (n) => `图片预算：${n}px`,
+    modelsBudgetBytes: (n) => `图片预算：${n} 字节/请求`,
+    modelsBudgetLow: '图片预算：low（512×512）',
+    modelsEffort: (e) => `推理档：${e}`,
+    modelsSwitched: '模型已切换。',
+    modelsSwitchFailed: (m) => `切换失败：${m}`,
+    modelsConfirm: (n, p) => `将当前默认切换为 ${n}（${p}）？`,
+    modelsProviderMissing: '该 provider 缺少 api/url/key，需要先在 settings.yaml 里补全',
+    modelsInUseTitle: 'DSH 现有模型',
+    modelsAddBtn: '＋ 手动添加',
+    modelsCcTitle: 'cc-switch 中可用（尚未导入）',
+    modelsCcUnavailable: (r) => `cc-switch 列表不可用：${r}`,
+    modelsCcEmpty: '未发现 cc-switch provider，或全部已导入。',
+    modelsCcImport: (n, m) => `导入 ${m} 到 DSH（provider ${n}）`,
+    modelsCcImported: '已从 cc-switch 导入。',
+    modelsCcAuthToken: (e) => `认证 token 仅在 cc-switch 中，需要自行设置环境变量 ${e}`,
+    modelsAddTitle: '向 DSH 添加模型',
+    modelsAddSubmit: '保存',
+    modelsAddCancel: '取消',
+    modelsAddPickProvider: '已存在的 provider id 或新建',
+    modelsAddErr: (m) => `保存失败：${m}`,
+    modelsAddNeedProviderFields: '新建 provider 需要填写 key 环境变量、API 协议与 Base URL。',
+    modelsSetDefault: '设为默认',
+    modelsInvalid: '配置有误',
+    searchModels: '搜索模型…',
+    modelsSearchEmpty: (q) => `没有匹配 ${JSON.stringify(q)} 的模型。`,
+    modelsNoneHint: '点击上方"添加模型"按钮新建，或从下方 cc-switch 导入。',
+    active: '当前默认',
+    modelsEditTitle: '编辑模型',
+    modelsEditSubmit: '保存修改',
+    modelsEditProviderTitle: '编辑提供方',
+    modelsEditProviderSubmit: '保存提供方',
+    modelsAddApiKeyHintEmpty: 'DSH 不会在这里保存 secret，只记录环境变量名。',
+    modelsAddApiKeyHintSet: (e, p) => `请在 ${e} 环境变量里填写 API key 之后，再使用 ${p}。`,
+    modelsAddAdapterTitle: '适配器',
+    modelsPageHint: '为每个提供方配置 API key 后即可使用其模型。',
+    statProvidersLabel: '提供方',
+    statModelsLabel: '模型',
+    statActiveLabel: '当前默认',
+    modelsAddProvider: '+ 添加提供方',
+    modelsAddCustomProvider: '+ 添加自定义提供方',
+    edit: '编辑',
+    delete: '删除',
+    addModelUnder: '添加模型',
+    modelsCountSingular: '1 个模型',
+    modelsCountPlural: (n) => `${n} 个模型`,
+    modelsAddSaved: '已保存。',
+    modelsEditSaved: '已更新。',
+    modelsDeleted: '已删除。',
+    modelsDeleteModelConfirm: (k) => `确认删除模型 ${k}？此操作无法撤销。`,
+    modelsDeleteProviderConfirm: (k) => `确认删除提供方 ${k} 及其所有模型？此操作无法撤销。`,
+    openConfigFile: '打开配置文件',
+    presetCustom: '— 自定义（下方填写）—',
+    presetHint: '选择预设会预填 API 与 Base URL，之后可覆盖任意字段。',
   },
 };
 
@@ -534,6 +1191,36 @@ const fmtTime = (iso) => {
 
 const num = (n) => Number(n ?? 0).toLocaleString(lang);
 
+/**
+ * Human uptime for the DSH tab. Deliberately coarse: "2d 4h" is what a person
+ * wants from a service panel, not "2d 4h 11m 37s".
+ */
+function fmtUptime(ms) {
+  if (ms == null || !Number.isFinite(ms)) return '—';
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (days > 0) return t('dshUptimeDays', num(days), num(hours));
+  if (hours > 0) return t('dshUptimeHours', num(hours), num(mins));
+  if (mins > 0) return t('dshUptimeMinutes', num(mins), num(secs));
+  return t('dshUptimeSeconds', num(secs));
+}
+
+/** Same idea for a CPU-time figure, which is small and unit-less otherwise. */
+function fmtDuration(ms) {
+  if (ms == null || !Number.isFinite(ms)) return '—';
+  if (ms < 1000) return `${num(Math.round(ms))} ms`;
+  return `${num(Math.round(ms / 1000))} s`;
+}
+
+function fmtBytes(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const mb = n / (1024 * 1024);
+  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(1)} MB`;
+}
+
 /** Collapse the user's home directory to `~` so paths stay readable. */
 function short(p) {
   const home = state.paths && state.paths.home;
@@ -574,10 +1261,20 @@ async function openTarget(target) {
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
-async function load(showSpinner) {
+
+/**
+ * Fetch `/api/state` and repaint.
+ *
+ * @param {boolean} showSpinner
+ * @param {boolean} [force] Ask the server to re-probe the dsh web process
+ *   instead of answering from its cache. An explicit refresh and every DSH
+ *   action want this: the cached answer is the one the user is trying to
+ *   replace.
+ */
+async function load(showSpinner, force) {
   if (showSpinner) $('#refresh').innerHTML = `<span class="spin">◐</span> ${esc(t('refreshBusy'))}`;
   try {
-    const data = await api('/api/state');
+    const data = await api(force ? '/api/state?fresh=1' : '/api/state');
     Object.assign(state, data);
     render();
     if (timer) clearInterval(timer);
@@ -619,6 +1316,7 @@ function render() {
   renderBanners();
   renderSkills();
   renderMcp();
+  renderDsh();
   renderAbout();
 
   $('#foot').innerHTML = `
@@ -633,9 +1331,17 @@ function renderBanners() {
   const meta = state.mcpMeta || {};
 
   if (meta.restartPending) {
+    // The "Restart dsh web now" button is only offered when the running host
+    // actually supports it. CLI mode intentionally does not, so the route
+    // returns 501 and we keep the instruction text as the fallback.
+    const canRestart = Boolean(meta.canRestart);
+    const action = canRestart
+      ? `<div style="margin-top:8px"><button class="primary mini" id="restartNow">${esc(t('restartNow'))}</button></div>`
+      : '';
     banners.push(`<div class="banner"><span>⚠️</span><div>
       <b>${t('restartBannerTitle')}</b><br>
       ${t('restartBannerBody', esc(fmtTime(meta.patchMtime)), esc(fmtTime(meta.dshWebStartedAt)))}
+      ${action}
     </div></div>`);
   }
 
@@ -761,6 +1467,114 @@ function renderMcp() {
   }).join('');
 }
 
+/**
+ * Render the DSH tab: process status, three controls, the last start error,
+ * and the command line the panel would use.
+ *
+ * Everything here comes from `/api/state.dsh`, so the tab is a thin shell over
+ * one source of truth. Two honesty rules matter more than the layout:
+ *
+ *   - "not running" and "not probed" are different answers. A host with
+ *     `DSH_PANEL_PROBE_WEB=0` gets a grey dot and says so, instead of being
+ *     told its service is down.
+ *   - a control the host cannot perform is disabled *and* explained. A button
+ *     that 501s is worse than one that is visibly unavailable.
+ */
+function renderDsh() {
+  const dsh = state.dsh || {};
+  const canControl = Boolean(dsh.canStart && dsh.canStop && dsh.canRestart);
+  const probed = dsh.probed !== false;
+
+  $('#dshPageTitle').textContent = t('dshPageTitle');
+  $('#dshPageHint').textContent = t('dshPageHint');
+  $('#dshStatusLabel').textContent = t('dshStatusLabel');
+  $('#dshPidLabel').textContent = t('dshPidLabel');
+  $('#dshUptimeLabel').textContent = t('dshUptimeLabel');
+  $('#dshStartedAtLabel').textContent = t('dshStartedAtLabel');
+  $('#dshControlTitle').textContent = t('dshControlTitle');
+  $('#dshErrorTitle').textContent = t('dshErrorTitle');
+  $('#dshCmdlineTitle').textContent = t('dshCmdlineTitle');
+  $('#dshRuntimeTitle').textContent = t('dshRuntimeTitle');
+
+  // Status: a dot plus a word. `probed === false` is its own state.
+  const dot = $('#dshStatusDot');
+  if (!probed) {
+    dot.className = 'status-dot';
+    $('#dshStatusText').textContent = t('dshProbeDisabled');
+  } else if (dsh.running) {
+    dot.className = 'status-dot on';
+    $('#dshStatusText').textContent = t('dshRunning');
+  } else {
+    dot.className = 'status-dot warn';
+    $('#dshStatusText').textContent = t('dshStopped');
+  }
+
+  $('#dshPid').textContent = dsh.pid != null ? String(dsh.pid) : '—';
+  $('#dshUptime').textContent = fmtUptime(dsh.uptimeMs);
+  $('#dshStartedAt').textContent = dsh.startedAt ? fmtTime(dsh.startedAt) : (dsh.running ? t('dshUnknown') : '—');
+
+  // Command line card: the running process when there is one, otherwise the
+  // command the Start button would run -- both are things the user needs.
+  const startSource = dsh.startCommandSource === 'DSH_WEB_CMD'
+    ? t('dshCommandSourceEnv')
+    : t('dshCmdSourceDefault');
+  $('#dshCmdline').textContent = dsh.cmdline
+    ? `${t('dshDetected')}:\n${dsh.cmdline}`
+    : (dsh.running ? t('dshUnknown') : '—');
+  $('#dshStartCmd').textContent = t('dshStartCommand', dsh.startCommand || 'dsh web', startSource);
+
+  // Buttons. Start is meaningless while the service runs; stop/restart are
+  // meaningless while it does not.
+  const startBtn = $('#dshStartBtn');
+  const stopBtn = $('#dshStopBtn');
+  const restartBtn = $('#dshRestartBtn');
+  startBtn.textContent = t('dshStartBtn');
+  stopBtn.textContent = t('dshStopBtn');
+  restartBtn.textContent = t('dshRestartBtn');
+  if (!canControl) {
+    startBtn.disabled = true;
+    stopBtn.disabled = true;
+    restartBtn.disabled = true;
+    $('#dshControlHint').textContent = t('dshControlUnavailable');
+  } else {
+    const running = Boolean(dsh.running);
+    startBtn.disabled = running;
+    stopBtn.disabled = !running;
+    restartBtn.disabled = !running;
+    $('#dshControlHint').textContent = !probed
+      ? t('dshNotProbed')
+      : (running ? t('dshControlRunningHint') : t('dshControlStoppedHint'));
+  }
+
+  // The restart warning is not decoration: on a panel that was opened from
+  // dsh web, restarting it takes this page down with it. The dialog note is
+  // there because the native confirm() cannot be localised from here.
+  $('#dshControlWarn').textContent = canControl
+    ? `${t('dshRestartWarning')} ${t('dshDialogNote')}`
+    : '';
+
+  // Last-error card. Rendered only when there is an error: a stale card from a
+  // previous attempt is more confusing than no card.
+  const errorCard = $('#dshErrorCard');
+  if (dsh.lastStartError) {
+    errorCard.style.display = '';
+    $('#dshLastError').textContent = dsh.lastStartError;
+  } else {
+    errorCard.style.display = 'none';
+  }
+
+  // Runtime card: what the probe cost, and what it measured. A visible probe
+  // time is how a user can tell a slow poll from a slow machine.
+  const rows = [];
+  if (probed) rows.push(`<tr><td>${esc(t('dshProbeMs', dsh.probeMs ?? 0))}</td><td></td></tr>`);
+  if (dsh.cpuMs != null) rows.push(`<tr><td>${esc(t('dshCpu', fmtDuration(dsh.cpuMs)))}</td><td></td></tr>`);
+  if (dsh.rssBytes != null) rows.push(`<tr><td>${esc(fmtBytes(dsh.rssBytes))}</td><td></td></tr>`);
+  if (!dsh.running && probed && dsh.canStart) {
+    rows.push(`<tr><td colspan="2" style="color:var(--fg-dim)">${esc(t('dshNotFound'))}</td></tr>`);
+  }
+  $('#dshRuntimeTable').innerHTML = rows.join('');
+}
+
 function pathRow(label, value, target, keepFull) {
   const shown = value ? (keepFull ? value : short(value)) : t('notConfigured');
   const btn = value && target
@@ -815,10 +1629,11 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === b));
   $('#view-skills').style.display = tab === 'skills' ? '' : 'none';
   $('#view-mcp').style.display = tab === 'mcp' ? '' : 'none';
+  $('#view-dsh').style.display = tab === 'dsh' ? '' : 'none';
   $('#view-about').style.display = tab === 'about' ? '' : 'none';
 }));
 
-$('#refresh').addEventListener('click', () => load(true));
+$('#refresh').addEventListener('click', () => load(true, true));
 $('#theme').addEventListener('click', () => {
   theme = theme === 'dark' ? 'light' : 'dark';
   try { localStorage.setItem('dshcp.theme', theme); } catch { /* private mode */ }
@@ -839,6 +1654,32 @@ document.addEventListener('click', (e) => {
   if (target) openTarget(target);
 });
 
+// "Restart dsh web now" lives in the MCP restart banner. The button is only
+// rendered when the host supports it (see `meta.canRestart`), but double-check
+// the flag here in case the UI is rendered before the state lands.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('#restartNow');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    if (!confirm(t('restartConfirm'))) return;
+    const r = await api('/api/restart', {});
+    if (r.killedPid == null && r.newPid == null) {
+      // Nothing was killed and nothing was spawned: dsh web was not running.
+      // That is not an error -- the user may have closed it deliberately --
+      // but the banner will clear only on the next /api/state probe.
+      toast(t('restartDone'));
+    } else {
+      toast(t('restartDone'));
+    }
+    await load(false);
+  } catch (err) {
+    toast(t('restartFailed', err.message));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 document.addEventListener('change', async (e) => {
   const el = e.target;
   if (!/^(sk|mc)-/.test(el.id)) return;
@@ -850,7 +1691,7 @@ document.addEventListener('change', async (e) => {
         key: el.dataset.key, enabled, poolDir: el.dataset.pool || undefined,
       });
       if (r.note) toast(r.note);
-    } else {
+    } else if (el.dataset.kind === 'mcp') {
       const r = await api('/api/mcp/toggle', { key: el.dataset.key, enabled });
       if (r.note) toast(r.note);
     }
@@ -861,6 +1702,59 @@ document.addEventListener('change', async (e) => {
     el.disabled = false;
   }
 });
+
+// DSH tab actions.
+//
+// Every handler follows the same shape: disable the button, run the action,
+// force a fresh probe (never trust the cache after a mutation), and report what
+// was *observed* rather than what was attempted. A start whose process never
+// appeared is a failure the user must see, not a success with a silent caveat.
+async function dshAction(kind) {
+  const btn = $(`#dsh${kind[0].toUpperCase()}${kind.slice(1)}Btn`);
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api(`/api/dsh/${kind}`, {});
+    if (r.alive === false && (kind === 'start' || kind === 'restart')) {
+      toast(kind === 'start' ? t('dshStartNotAlive', r.error) : t('dshRestartNotAlive', r.error));
+    } else if (r.commandFellBack) {
+      // The service is up, but not on the command line it was running before.
+      // That can silently move its port, so say it out loud.
+      toast(t('dshRestartFellBack', r.capturedCommand || ''));
+    } else if (r.changed === false && r.note) {
+      toast(r.note);
+    } else if (kind === 'start') {
+      toast(t('dshStarted'));
+    } else if (kind === 'stop') {
+      toast(t('dshStopDone'));
+    } else {
+      toast(t('dshRestarted'));
+    }
+    await load(false, true);
+  } catch (err) {
+    const msg = err.message || '';
+    if (kind === 'start') toast(t('dshStartFailed', msg));
+    else if (kind === 'stop') toast(t('dshStopFailed', msg));
+    else toast(t('dshRestartFailed', msg));
+    // Put the buttons back in a usable state: `load` re-render is the normal
+    // path, but a failed request may have skipped it.
+    await load(false, true).catch(() => {});
+    if (btn) btn.disabled = false;
+  }
+}
+
+$('#dshStartBtn')?.addEventListener('click', () => dshAction('start'));
+$('#dshStopBtn')?.addEventListener('click', () => {
+  if (confirm(t('dshStopConfirm'))) dshAction('stop');
+});
+$('#dshRestartBtn')?.addEventListener('click', () => {
+  if (confirm(t('dshRestartConfirm'))) dshAction('restart');
+});
+
+// (The single-document click handler was previously a router for
+// per-row model actions -- set-default / edit-provider / edit-model /
+// add-model-under / delete-model / delete-provider / data-cc-import. The
+// Models tab is gone; if a future tab needs the same pattern, reinstate
+// the listener around the same `data-action` dispatcher.)
 
 async function bulk(enabled) {
   const q = $('#q').value.trim().toLowerCase();

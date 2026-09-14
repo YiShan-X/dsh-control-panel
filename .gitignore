@@ -31,3 +31,7 @@ Desktop.ini
 # Throwaway sandboxes used while debugging
 .tmp/
 sandbox/
+
+# Local code-index caches (codegraph and friends). Machine-specific, rebuildable,
+# and large enough that committing one would bloat every clone.
+.codegraph/

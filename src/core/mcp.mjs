@@ -13,11 +13,11 @@
  * cc-switch is only used to create a block that has never existed in DSH.
  */
 
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { HttpError } from './errors.mjs';
 import { readCcSwitch } from './ccswitch.mjs';
+import { dshWebStartedAt } from './dsh.mjs';
 import { appendBlock, ensureValidArray, parseBlocks, removeBlock } from './patch.mjs';
 import { exists, log, readText, writeText, yamlScalar } from './util.mjs';
 
@@ -205,8 +205,11 @@ export function summarize(config, raw) {
  * Build the complete MCP view.
  *
  * @param {import('./config.mjs').PanelConfig} config
+ * @param {{dshWebStartedAt?: string|null}} [opts] The caller may pass the boot
+ *   time it already measured, so a request that renders both the MCP and DSH
+ *   tabs pays for one process probe instead of two.
  */
-export async function buildMcpState(config) {
+export async function buildMcpState(config, opts = {}) {
   const cc = await readCcSwitch(config);
   const { patchText, disabledText, on, off } = readPatchState(config);
 
@@ -286,7 +289,11 @@ export async function buildMcpState(config) {
     ),
     patchMtime: mtimeOf(config.patchFile),
     disabledMtime: mtimeOf(config.disabledFile),
-    dshWebStartedAt: config.probeWeb === false ? null : dshWebStartedAt(),
+    // `undefined` means "ask the probe"; an explicit `null` means the caller
+    // already knows there is no running service and we must not re-probe.
+    dshWebStartedAt: opts.dshWebStartedAt !== undefined
+      ? opts.dshWebStartedAt
+      : (config.probeWeb === false ? null : dshWebStartedAt()),
     files: { patch: config.patchFile, disabled: config.disabledFile },
     ccSwitch: { available: cc.available, reason: cc.reason },
   };
@@ -364,78 +371,12 @@ export async function setMcpEnabled(config, key, enabled) {
 // "Is a restart actually pending?"
 // ---------------------------------------------------------------------------
 
-/**
- * When did the running `dsh web` boot?
- *
- * MCP composition is read once at startup, so comparing this against the patch
- * file's mtime is what tells the user whether a restart is genuinely pending
- * rather than nagging them forever. Best-effort by design: a null result just
- * hides the banner.
- *
- * Cached: this shells out, and the UI polls `/api/state` on a timer.
- *
- * @returns {string|null} ISO timestamp
+/*
+ * `dshWebStartedAt` is imported from dsh.mjs, which owns both the process
+ * filter and the boot-time cache. It used to be duplicated here, and the two
+ * copies were free to drift: a tweak to one filter would have made the MCP
+ * banner and the DSH tab disagree about whether the service was running.
  */
-const WEB_START_TTL_MS = 20000;
-let webStartCache = { at: 0, value: null };
 
-export function dshWebStartedAt() {
-  const now = Date.now();
-  if (now - webStartCache.at < WEB_START_TTL_MS) return webStartCache.value;
-  webStartCache = { at: now, value: probeWebStartedAt() };
-  return webStartCache.value;
-}
-
-function probeWebStartedAt() {
-  try {
-    return process.platform === 'win32' ? webStartedWindows() : webStartedPosix();
-  } catch (err) {
-    log(`WARN could not determine dsh web start time: ${String(err.message).split('\n')[0]}`);
-    return null;
-  }
-}
-
-function isDshWeb(cmdline) {
-  const s = String(cmdline);
-  if (!/dsh/i.test(s)) return false;
-  if (!/\bweb\b/.test(s)) return false;
-  if (/control-panel/i.test(s)) return false;
-  return true;
-}
-
-function normalizeIso(out) {
-  const trimmed = String(out).trim();
-  if (!trimmed) return null;
-  // PowerShell's round-trip format carries 7 fractional digits; Date wants 3.
-  return trimmed.replace(/(\.\d{3})\d*Z?$/, '$1Z');
-}
-
-function webStartedWindows() {
-  const ps = [
-    '-NoProfile', '-NonInteractive', '-Command',
-    "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | " +
-    "Where-Object { $_.CommandLine -match 'dsh' -and $_.CommandLine -match '\\bweb\\b' -and $_.CommandLine -notmatch 'control-panel' } | " +
-    'Sort-Object CreationDate | Select-Object -First 1 | ' +
-    "ForEach-Object { $_.CreationDate.ToUniversalTime().ToString('o') }",
-  ];
-  const out = execFileSync('powershell.exe', ps, {
-    encoding: 'utf8', timeout: 8000, windowsHide: true,
-  });
-  return normalizeIso(out);
-}
-
-function webStartedPosix() {
-  // `lstart` is a fixed-width 24-character field, so the command line that
-  // follows can contain spaces without breaking the parse.
-  const out = execFileSync('ps', ['-Ao', 'lstart=,args='], {
-    encoding: 'utf8', timeout: 8000,
-  });
-  const rows = out
-    .split('\n')
-    .map((line) => ({ start: line.slice(0, 24).trim(), cmd: line.slice(24) }))
-    .filter((r) => r.start && isDshWeb(r.cmd))
-    .map((r) => ({ ...r, at: new Date(r.start) }))
-    .filter((r) => !Number.isNaN(r.at.getTime()))
-    .sort((a, b) => a.at - b.at);
-  return rows.length ? rows[0].at.toISOString() : null;
-}
+/** Re-exported so callers that only know the MCP module keep working. */
+export { dshWebStartedAt };

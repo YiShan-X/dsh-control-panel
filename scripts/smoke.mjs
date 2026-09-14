@@ -38,7 +38,11 @@ if (process.platform === 'linux' && process.env.CI) {
 const child = spawn(electronBin, args, {
   cwd: ROOT,
   stdio: 'inherit',
-  env: { ...process.env, DSH_PANEL_SMOKE: '1' },
+  // DSH_PANEL_NO_CONTROL keeps the smoke run from ever being able to kill or
+  // relaunch the machine's real `dsh web` -- the DSH tab renders its
+  // "this host cannot" state, which is exactly the state we want to prove
+  // renders without a renderer error.
+  env: { ...process.env, DSH_PANEL_SMOKE: '1', DSH_PANEL_NO_CONTROL: '1' },
 });
 
 const cleanup = () => {

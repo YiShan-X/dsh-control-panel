@@ -219,10 +219,10 @@ skill 的 `mcp.ps1` 是同一套约定，两种管理方式可以混用在同一
 ## 开发
 
 ```bash
-npm test              # 70 个单元 + 集成测试，零测试框架
+npm test              # 单元 + 集成测试，零测试框架
 npm run smoke         # 启动真实 Electron 窗口后退出
 npm run screenshot    # 用合成演示数据重新生成 docs/ 截图
-npm run icons         # 重新生成 build/ 图标（手写 PNG/ICO 编码器）
+npm run icons         # 从 assets/ 的设计稿导出安装 build/ 图标
 npm run pack          # electron-builder --dir，免打包快速验证
 ```
 

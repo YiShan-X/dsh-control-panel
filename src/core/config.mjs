@@ -25,6 +25,7 @@ import path from 'node:path';
  * @property {string} dshSkills        Where DSH discovers skills (link target dir).
  * @property {string} patchFile        cordis.patch.yml -- enabled MCP blocks.
  * @property {string} disabledFile     Parked MCP blocks.
+ * @property {string} settingsFile     DSH settings.yaml (model catalog + default).
  * @property {boolean} ccEnabled
  * @property {string} ccHome
  * @property {string} ccDb
@@ -94,6 +95,7 @@ export function resolveConfig(env = process.env) {
     disabledFile: path.resolve(
       env.DSH_DISABLED_FILE || path.join(dshHome, 'mcp-manager', 'disabled.yml'),
     ),
+    settingsFile: path.resolve(env.DSH_SETTINGS_FILE || path.join(dshHome, 'settings.yaml')),
     ccEnabled,
     ccHome,
     ccDb: path.resolve(env.DSH_PANEL_CC_DB || path.join(ccHome, 'cc-switch.db')),

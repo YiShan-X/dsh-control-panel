@@ -10,6 +10,14 @@ import fs from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { HttpError } from './errors.mjs';
+import {
+  dshWebStatus,
+  getLastStartError,
+  restartDshWeb,
+  startCommandInfo,
+  startDshWeb,
+  stopDshWeb,
+} from './dsh.mjs';
 import { buildMcpState, setMcpEnabled } from './mcp.mjs';
 import { buildSkillState, disableSkill, enableSkill } from './skills.mjs';
 import { log } from './util.mjs';
@@ -43,12 +51,45 @@ async function readBody(req) {
 }
 
 /**
+ * @typedef {object} DshControl
+ * @property {() => import('./dsh.mjs').DshWebStatus} status   Current status snapshot.
+ * @property {() => Promise<any>} start
+ * @property {() => Promise<any>} stop
+ * @property {() => Promise<any>} restart
+ */
+
+/**
  * @typedef {object} PanelServerOptions
  * @property {string} publicDir           Directory holding index.html.
  * @property {string} [version]           Version string shown in the UI footer.
  * @property {(p: string) => any} [openPath]  Hook for "reveal in file manager".
  * @property {() => Promise<any>} [restartHook] Optional "restart dsh web" action.
+ * @property {DshControl} [dshControl]    Process control for the DSH tab. Without
+ *   it every `/api/dsh/*` route answers 501 and the UI shows the buttons
+ *   disabled with a reason -- a host that cannot manage a process must never
+ *   pretend it can.
  */
+
+/** The control bundle a host gets when it wires nothing up. */
+const NO_DSH_CONTROL = null;
+
+/**
+ * What the status looks like when the host was told not to probe at all
+ * (`DSH_PANEL_PROBE_WEB=0`). `probed: false` is the honest part: "unknown" is
+ * not the same answer as "not running", and the UI says so.
+ * @type {import('./dsh.mjs').DshWebStatus & {probed: boolean}}
+ */
+const NOT_PROBED = {
+  running: false,
+  pid: null,
+  cmdline: null,
+  startedAt: null,
+  uptimeMs: null,
+  cpuMs: null,
+  rssBytes: null,
+  probeMs: 0,
+  probed: false,
+};
 
 /**
  * @param {import('./config.mjs').PanelConfig} config
@@ -57,6 +98,8 @@ async function readBody(req) {
 export function createPanelServer(config, options) {
   const publicDir = path.resolve(options.publicDir);
   const version = options.version ?? '0.0.0';
+  const dshControl = options.dshControl ?? NO_DSH_CONTROL;
+  const canControlDsh = Boolean(dshControl);
 
   function serveStatic(res, urlPath) {
     const rel = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
@@ -75,11 +118,35 @@ export function createPanelServer(config, options) {
     res.end(data);
   }
 
-  async function buildState() {
+  /**
+   * Build the whole payload the UI renders from.
+   *
+   * @param {{force?: boolean}} [opts] `force` bypasses the process-probe cache,
+   *   which is what the refresh button and every DSH action want: the user asked
+   *   a question, so the answer must be observed now, not up to 15 s ago.
+   */
+  /**
+   * Read the status the host is able to report.
+   *
+   * @param {{fresh?: boolean}} [opts]
+   * @returns {import('./dsh.mjs').DshWebStatus}
+   */
+  function readDshStatus(opts = {}) {
+    if (dshControl) return dshControl.status(opts);
+    if (config.probeWeb === false) return NOT_PROBED;
+    return dshWebStatus(opts);
+  }
+
+  async function buildState(opts = {}) {
+    const fresh = opts.force === true;
+    const dsh = readDshStatus({ fresh });
     const skills = await buildSkillState(config);
-    const mcp = await buildMcpState(config);
+    // Reuse the probe above for the MCP restart comparison: one OS call per
+    // request, not two.
+    const mcp = await buildMcpState(config, { dshWebStartedAt: dsh.startedAt });
+    const start = startCommandInfo();
     const restartPending = Boolean(
-      mcp.patchMtime && mcp.dshWebStartedAt && new Date(mcp.patchMtime) > new Date(mcp.dshWebStartedAt),
+      mcp.patchMtime && dsh.startedAt && new Date(mcp.patchMtime) > new Date(dsh.startedAt),
     );
     return {
       version,
@@ -97,9 +164,22 @@ export function createPanelServer(config, options) {
       mcpMeta: {
         patchMtime: mcp.patchMtime,
         disabledMtime: mcp.disabledMtime,
-        dshWebStartedAt: mcp.dshWebStartedAt,
+        dshWebStartedAt: dsh.startedAt,
         restartPending,
+        // Only hosts that wired a `restartHook` can satisfy a click on the
+        // banner's "Restart dsh web now" button; CLI mode deliberately does
+        // not, so the UI shows the manual instruction instead.
+        canRestart: typeof options.restartHook === 'function',
         files: mcp.files,
+      },
+      dsh: {
+        ...dsh,
+        canStart: canControlDsh,
+        canStop: canControlDsh,
+        canRestart: canControlDsh,
+        startCommand: start.command,
+        startCommandSource: start.source,
+        lastStartError: getLastStartError(),
       },
       paths: {
         home: config.home,
@@ -122,13 +202,19 @@ export function createPanelServer(config, options) {
 
     try {
       if (route === 'GET /api/health') return sendJson(res, 200, { ok: true, version });
-      if (route === 'GET /api/state') return sendJson(res, 200, await buildState());
+      if (route === 'GET /api/state') {
+        // `?fresh=1` forces a process probe. The UI sends it for an explicit
+        // refresh and right after a DSH action, where the cached answer is
+        // exactly the stale one the user is trying to get rid of.
+        const fresh = url.searchParams.get('fresh') === '1';
+        return sendJson(res, 200, await buildState({ force: fresh }));
+      }
 
       // Answer the browser's automatic favicon probe quietly. A 404 here logs a
       // console error, which would trip the desktop smoke test's "no renderer
       // errors" assertion for a reason that has nothing to do with a bug.
       if (route === 'GET /favicon.ico') {
-        res.writeHead(204, { 'cache-control': 'max-age=86400' });
+        res.writeHead(204, 'cache-control: max-age=86400');
         return res.end();
       }
 
@@ -190,6 +276,43 @@ export function createPanelServer(config, options) {
         if (!options.openPath) throw new HttpError(501, 'this host cannot open paths');
         const err = await options.openPath(resolved);
         return sendJson(res, 200, { ok: true, path: resolved, error: err ? String(err) : null });
+      }
+
+      // The "restart dsh web now" button lives in the MCP tab's restart banner.
+      // It only does anything in hosts that wired a `restartHook` -- a host
+      // that cannot manage processes degrades to a clear 501 instead of
+      // silently doing nothing.
+      if (route === 'POST /api/restart') {
+        if (!options.restartHook) throw new HttpError(501, 'this host cannot restart dsh web');
+        const result = await options.restartHook();
+        return sendJson(res, 200, { ok: true, ...result });
+      }
+
+      // DSH service control, used by the DSH tab. A host without `dshControl`
+      // (a plain browser-launched panel that was not asked to manage anything)
+      // answers 501 for all three, so the UI can say "this host cannot" rather
+      // than offering a button that fails.
+      if (route === 'POST /api/dsh/start') {
+        if (!dshControl) throw new HttpError(501, 'this host cannot start dsh web');
+        const result = await dshControl.start();
+        return sendJson(res, 200, { ok: true, ...result });
+      }
+      if (route === 'POST /api/dsh/stop') {
+        if (!dshControl) throw new HttpError(501, 'this host cannot stop dsh web');
+        const result = await dshControl.stop();
+        return sendJson(res, 200, { ok: true, ...result });
+      }
+      if (route === 'POST /api/dsh/restart') {
+        if (!dshControl) throw new HttpError(501, 'this host cannot restart dsh web');
+        const result = await dshControl.restart();
+        return sendJson(res, 200, { ok: true, ...result });
+      }
+      // The status probe on its own, for a caller that wants a cheap answer
+      // without the skill/MCP filesystem walk.
+      if (route === 'GET /api/dsh/status') {
+        const fresh = url.searchParams.get('fresh') === '1';
+        const status = readDshStatus({ fresh });
+        return sendJson(res, 200, { ok: true, ...status, canControl: canControlDsh });
       }
 
       if (req.method === 'GET') return serveStatic(res, url.pathname);

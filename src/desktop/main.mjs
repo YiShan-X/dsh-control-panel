@@ -11,11 +11,20 @@
  * else already owns 8791.
  */
 
-import { app, BrowserWindow, Menu, dialog, nativeTheme, shell } from 'electron';
+import {
+  app, BrowserWindow, Menu, Tray, dialog, nativeImage, nativeTheme, shell,
+} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig } from '../core/config.mjs';
+import {
+  dshWebStatus,
+  restartDshWeb,
+  startDshWeb,
+  stopDshWeb,
+  warmDshWebCache,
+} from '../core/dsh.mjs';
 import { createPanelServer, listen } from '../core/server.mjs';
 import { log } from '../core/util.mjs';
 
@@ -27,8 +36,13 @@ const REPO_URL = 'https://github.com/YiShan-X/dsh-control-panel';
 let bound = null;
 /** @type {BrowserWindow|null} */
 let win = null;
+/** @type {Tray|null} */
+let tray = null;
 /** @type {string|null} */
 let logFile = null;
+/** True once the user picked "Quit" from the tray menu. Distinguishes a real
+ *  exit from a window-close that the tray should swallow and survive. */
+let isQuitting = false;
 /** Renderer console errors seen during a smoke run. Any entry fails the run. */
 const rendererErrors = [];
 
@@ -72,7 +86,10 @@ function statePath() {
 }
 
 function loadWindowState() {
-  const fallback = { width: 1240, height: 860 };
+  // 920x700 matches the density of the Skills/MCP/About panels and keeps the
+  // first launch from feeling like half the window is empty space. Existing
+  // users with a window-state.json keep whatever they last resized to.
+  const fallback = { width: 920, height: 700 };
   try {
     const raw = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
     const state = {
@@ -139,7 +156,16 @@ function createWindow() {
   if (state.maximized) win.maximize();
 
   win.once('ready-to-show', () => win?.show());
-  win.on('close', saveWindowState);
+
+  // Window close: save geometry, then either hide (normal mode, tray keeps the
+  // app alive) or actually close (smoke mode / a real Quit). The renderer is
+  // not destroyed in the hide path, so showing it again is instant.
+  win.on('close', (event) => {
+    saveWindowState();
+    if (isQuitting || process.env.DSH_PANEL_SMOKE) return;
+    event.preventDefault();
+    win?.hide();
+  });
   win.on('closed', () => { win = null; });
 
   // Smoke mode: boot the real window, prove the UI rendered, then exit. Used by
@@ -275,9 +301,135 @@ function buildMenu() {
 
 /** Feature the app is expected to have, kept explicit rather than implicit. */
 export function focusExistingWindow() {
-  if (!win) return;
+  // Recreate the window if the previous one was hidden long enough to be torn
+  // down -- on macOS the closed event can fire after a hide, leaving `win`
+  // null until the user clicks the dock icon again.
+  if (!win || win.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
+}
+
+// ---------------------------------------------------------------------------
+// Tray: the panel survives closing its window, and a left-click brings it back.
+// ---------------------------------------------------------------------------
+
+/**
+ * Locate an icon bitmap that ships with the app.
+ *
+ * The icons are *not* inside the asar: `build/` is excluded from the packaged
+ * files, so they are attached as `extraResources` and land next to `app.asar`
+ * under `resources/build/`. A development run has no such directory, so both
+ * candidates are tried and the asar path is the fallback.
+ *
+ * Getting this wrong is silent: `createFromPath` on a missing file returns an
+ * empty image, so the tray would show a blank slot instead of an icon -- which
+ * is exactly the bug that shipped in earlier builds.
+ *
+ * @param {string} name
+ * @returns {Electron.NativeImage}
+ */
+function loadIcon(name) {
+  const candidates = [
+    path.join(process.resourcesPath ?? '', 'build', name),
+    path.join(ROOT, 'build', name),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const image = nativeImage.createFromPath(candidate);
+      if (!image.isEmpty()) return image;
+    } catch { /* try the next candidate */ }
+  }
+  log(`WARN no icon found for ${name} (looked in ${candidates.join(', ')})`);
+  return nativeImage.createEmpty();
+}
+
+/**
+ * Pick the tray image for the current taskbar/menu-bar colour.
+ *
+ * The monochrome glyph is white, which is the right choice on a dark taskbar and
+ * invisible on a light one; the full icon carries its own dark tile and reads on
+ * both. Choosing by theme is therefore not decoration -- it is the difference
+ * between an icon and an empty gap in the notification area.
+ *
+ * On macOS the glyph is additionally marked as a template image, which is how
+ * the system knows to invert it for the menu bar.
+ */
+function trayImage() {
+  const dark = nativeTheme.shouldUseDarkColors;
+  const image = loadIcon(dark ? 'icon-mono.png' : 'icon.png');
+  if (process.platform === 'darwin' && dark && !image.isEmpty()) image.setTemplateImage(true);
+  return image;
+}
+
+/**
+ * Build and install the tray icon + menu.
+ *
+ * Skipped in smoke and screenshot modes: those runs exit immediately after the
+ * window loads, and a leftover tray icon would be confusing on a CI host.
+ */
+function installTray() {
+  if (tray || process.env.DSH_PANEL_SMOKE) return;
+
+  tray = new Tray(trayImage());
+  tray.setToolTip('DSH Control Panel');
+  // `setIgnoreDoubleClickEvents(true)` keeps a brisk left-click from being
+  // interpreted as two opens on Windows; the menu still appears on right-click.
+  tray.setIgnoreDoubleClickEvents(true);
+
+  // A theme switch mid-session would otherwise leave a white glyph on a light
+  // taskbar (or the reverse) until the app restarted.
+  nativeTheme.on('updated', () => tray?.setImage(trayImage()));
+
+  tray.on('click', () => focusExistingWindow());
+
+  // Refresh the menu on every open so the entries reflect the *current* config
+  // (paths may have moved between launches, the log file may or may not exist).
+  tray.on('right-click', () => tray?.popUpContextMenu(buildTrayMenu()));
+
+  // Populate the menu once at install -- subsequent rebuilds happen on every
+  // right-click so any change to `logFile` or the config takes effect.
+  tray.setContextMenu(buildTrayMenu());
+}
+
+/**
+ * Build the tray context menu. Reuses the same "Open X" helpers the menu bar
+ * uses, so renaming or adding one only needs to happen in one place.
+ */
+function buildTrayMenu() {
+  const config = resolveConfig();
+  const openItem = (label, target) => ({
+    label,
+    click: async () => {
+      const err = await shell.openPath(target);
+      if (err) dialog.showErrorBox('Cannot open', `${target}\n\n${err}`);
+    },
+  });
+
+  return Menu.buildFromTemplate([
+    { label: 'Open Panel', click: () => focusExistingWindow() },
+    { type: 'separator' },
+    openItem('Open DSH home', config.dshHome),
+    openItem('Open DSH skill root', config.dshSkills),
+    openItem('Open MCP patch file', config.patchFile),
+    ...(logFile ? [openItem('Open log file', logFile)] : []),
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      // Setting `isQuitting` first lets the window's close handler know this
+      // is a real shutdown, not a "hide me in the tray" click.
+      click: () => { isQuitting = true; app.quit(); },
+    },
+  ]);
+}
+
+function destroyTray() {
+  if (!tray) return;
+  try { tray.destroy(); } catch { /* already gone */ }
+  tray = null;
 }
 
 /**
@@ -305,7 +457,7 @@ async function captureScreenshots(base) {
   // Which secondary tabs to capture is the caller's choice: the full docs set
   // wants all of them, an extra theme variant just wants the hero shot.
   const wanted = (process.env.DSH_PANEL_SMOKE_TABS ?? 'mcp,about').split(',').filter(Boolean);
-  for (const [tab, suffix] of [['mcp', '-mcp'], ['about', '-about']]) {
+  for (const [tab, suffix] of [['mcp', '-mcp'], ['dsh', '-dsh'], ['about', '-about']]) {
     if (!wanted.includes(tab)) continue;
     const clicked = await win.webContents.executeJavaScript(
       `(() => { const b = document.querySelector('[data-tab="${tab}"]'); if (!b) return false; b.click(); return true; })()`,
@@ -319,14 +471,35 @@ async function startServer() {
   // Honour an explicit port if one was set, otherwise take whatever is free.
   const requestedPort = process.env.DSH_PANEL_PORT ? config.port : 0;
 
+  // One bundle serves both entry points into process control: the MCP tab's
+  // "restart dsh web now" banner and the DSH tab's three buttons. Sharing the
+  // implementation is what keeps the two from disagreeing about what happened.
+  const dshControl = {
+    status: (opts) => dshWebStatus(opts),
+    start: () => startDshWeb(),
+    stop: () => stopDshWeb(),
+    restart: () => restartDshWeb(),
+  };
+
   const { server } = createPanelServer(config, {
     publicDir: path.join(ROOT, 'public'),
     version: app.getVersion(),
     openPath: (p) => shell.openPath(p),
+    dshControl,
+    restartHook: () => restartDshWeb(),
   });
 
   bound = await listen(server, { host: '127.0.0.1', port: requestedPort });
   log(`panel server on ${bound.url}`);
+
+  // Warm the process probe before the window asks for state, so the first paint
+  // is not blocked behind PowerShell. Never fatal.
+  if (config.probeWeb) {
+    const status = warmDshWebCache();
+    log(status.running
+      ? `dsh web running (pid ${status.pid})`
+      : 'no running dsh web found');
+  }
   return bound;
 }
 
@@ -360,6 +533,7 @@ if (!gotLock) {
     }
     buildMenu();
     createWindow();
+    installTray();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -367,10 +541,14 @@ if (!gotLock) {
   });
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    // The tray owns the lifecycle now: closing the window only hides it, and
+    // `app.quit()` only fires from the tray menu or `before-quit`. On macOS
+    // the OS convention is "stay alive even with no windows", which the tray
+    // also honours -- so the rule is the same on every platform: do nothing.
   });
 
   app.on('before-quit', async () => {
+    destroyTray();
     try { await bound?.close(); } catch { /* already gone */ }
   });
 }
