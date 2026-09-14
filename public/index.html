@@ -6,8 +6,35 @@
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" />
 <title>DSH Control Panel</title>
+<script>
+  /*
+   * Runs before first paint, so a light-theme user never sees a dark flash on
+   * launch. Deliberately tiny and dependency-free; the real theme logic lives at
+   * the bottom of the file and simply re-applies the same decision.
+   */
+  (function () {
+    var t;
+    try {
+      var q = new URLSearchParams(location.search).get('theme');
+      t = (q === 'light' || q === 'dark') ? q : localStorage.getItem('dshcp.theme');
+      if (t !== 'light' && t !== 'dark') {
+        t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+    } catch (e) {
+      t = 'dark';
+    }
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
 <style>
-  :root {
+  /*
+   * Every surface colour is a token, and both palettes define the same tokens.
+   * That is deliberate: the original stylesheet had ~25 hardcoded dark values
+   * scattered through the rules, and a light theme bolted on top of those leaves
+   * dark islands. Overriding one block of variables cannot.
+   */
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0f1115;
     --panel: #161a21;
     --panel-2: #1c212a;
@@ -16,11 +43,58 @@
     --fg-dim: #9aa4b2;
     --fg-faint: #6b7484;
     --accent: #4f8cff;
+    --accent-hover: #3d7ae8;
     --on: #35c07a;
     --off: #55607a;
     --warn: #e0a33c;
     --err: #e5604d;
+    --knob: #ffffff;
+    --shadow: 0 8px 28px rgba(0, 0, 0, .5);
+    --header-top: #12151b;
+    --header-bottom: rgba(18, 21, 27, .93);
+    --btn-hover: #232936;
+    --btn-hover-line: #39414f;
+    --bnr-warn-bg: #241d0e; --bnr-warn-line: #4a3a1a; --bnr-warn-fg: #f0d49a;
+    --bnr-info-bg: #101c2b; --bnr-info-line: #1f3550; --bnr-info-fg: #9dc4f0;
+    --bnr-err-bg: #2a1512;  --bnr-err-line: #52251f;  --bnr-err-fg:  #f0a99c;
+    --row-on-bg: #141d19;    --row-on-line: #24503a;
+    --row-bad-line: #4a2620; --row-unmanaged-line: #3a3320;
+    --tag-bg: #202633; --tag-fg: #6b7484; --tag-line: #2b323f;
+    --tag-bad-bg: #2c1714; --tag-bad-fg: #eb8b7b; --tag-bad-line: #4a2620;
+    --tag-warn-bg: #2a2211; --tag-warn-fg: #dfb263; --tag-warn-line: #4a3a1a;
+    --tag-good-bg: #12271d; --tag-good-fg: #6fd39c; --tag-good-line: #24503a;
     --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f6f9;
+    --panel: #ffffff;
+    --panel-2: #eceff4;
+    --line: #d8dee7;
+    --fg: #12161d;
+    --fg-dim: #4b5563;
+    --fg-faint: #6b7684;
+    --accent: #2b6fdb;
+    --accent-hover: #1f5cc4;
+    --on: #12875a;
+    --off: #b3bcc9;
+    --warn: #8a5d0b;
+    --err: #b83c2c;
+    --knob: #ffffff;
+    --shadow: 0 8px 28px rgba(15, 23, 42, .16);
+    --header-top: #ffffff;
+    --header-bottom: rgba(255, 255, 255, .88);
+    --btn-hover: #e0e6ef;
+    --btn-hover-line: #c6cfdd;
+    --bnr-warn-bg: #fdf3dc; --bnr-warn-line: #ecd9a8; --bnr-warn-fg: #6b4a06;
+    --bnr-info-bg: #e7f0fd; --bnr-info-line: #c3d9f5; --bnr-info-fg: #17457f;
+    --bnr-err-bg: #fdeae7;  --bnr-err-line: #f3c6bf;  --bnr-err-fg:  #8f2c1e;
+    --row-on-bg: #eefaf2;    --row-on-line: #a8d8bd;
+    --row-bad-line: #f0c0b7; --row-unmanaged-line: #e6d3a8;
+    --tag-bg: #eef1f6; --tag-fg: #5a6575; --tag-line: #dbe1ea;
+    --tag-bad-bg: #fbe9e6; --tag-bad-fg: #a3352a; --tag-bad-line: #f0c6be;
+    --tag-warn-bg: #fbf1dc; --tag-warn-fg: #7a5406; --tag-warn-line: #ecd9a8;
+    --tag-good-bg: #e6f6ec; --tag-good-fg: #0e6b41; --tag-good-line: #b6dfc6;
   }
   * { box-sizing: border-box; }
   body {
@@ -30,7 +104,7 @@
   a { color: var(--accent); }
   header {
     position: sticky; top: 0; z-index: 10;
-    background: linear-gradient(180deg, #12151b 0%, #12151bee 100%);
+    background: linear-gradient(180deg, var(--header-top) 0%, var(--header-bottom) 100%);
     border-bottom: 1px solid var(--line);
     padding: 14px 20px 0;
     backdrop-filter: blur(8px);
@@ -50,10 +124,10 @@
     border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px;
     cursor: pointer; transition: background .12s, border-color .12s;
   }
-  button:hover:not(:disabled) { background: #232936; border-color: #39414f; }
+  button:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-hover-line); }
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.primary:hover:not(:disabled) { background: #3d7ae8; }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
   button.mini { padding: 3px 9px; font-size: 12px; border-radius: 6px; }
   .tabs { display: flex; gap: 4px; margin-top: 12px; }
   .tab {
@@ -67,11 +141,11 @@
 
   .banner {
     display: flex; gap: 10px; align-items: flex-start;
-    border: 1px solid #4a3a1a; background: #241d0e; color: #f0d49a;
+    border: 1px solid var(--bnr-warn-line); background: var(--bnr-warn-bg); color: var(--bnr-warn-fg);
     border-radius: 9px; padding: 11px 14px; margin-bottom: 14px; font-size: 13px;
   }
-  .banner.info { border-color: #1f3550; background: #101c2b; color: #9dc4f0; }
-  .banner.err { border-color: #52251f; background: #2a1512; color: #f0a99c; }
+  .banner.info { border-color: var(--bnr-info-line); background: var(--bnr-info-bg); color: var(--bnr-info-fg); }
+  .banner.err { border-color: var(--bnr-err-line); background: var(--bnr-err-bg); color: var(--bnr-err-fg); }
   .banner code { font-family: var(--mono); font-size: 12px; }
 
   .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
@@ -88,9 +162,9 @@
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 9px; padding: 11px 13px;
   }
-  .row.is-on { border-color: #24503a; background: #141d19; }
-  .row.is-bad { border-color: #4a2620; }
-  .row.is-unmanaged { border-color: #3a3320; }
+  .row.is-on { border-color: var(--row-on-line); background: var(--row-on-bg); }
+  .row.is-bad { border-color: var(--row-bad-line); }
+  .row.is-unmanaged { border-color: var(--row-unmanaged-line); }
   .sub { color: var(--fg-dim); font-size: 12.5px; margin-top: 2px; }
 
   /* switch */
@@ -102,7 +176,8 @@
   }
   .sw label::after {
     content: ""; position: absolute; top: 3px; left: 3px;
-    width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--knob); transition: transform .15s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
   }
   .sw input:checked + label { background: var(--on); }
   .sw input:checked + label::after { transform: translateX(18px); }
@@ -116,12 +191,12 @@
   .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; align-items: center; }
   .tag {
     font-size: 11px; padding: 1px 7px; border-radius: 5px;
-    background: #202633; color: var(--fg-faint); border: 1px solid #2b323f;
+    background: var(--tag-bg); color: var(--tag-fg); border: 1px solid var(--tag-line);
     font-family: var(--mono);
   }
-  .tag.bad { background: #2c1714; color: #eb8b7b; border-color: #4a2620; }
-  .tag.warn { background: #2a2211; color: #dfb263; border-color: #4a3a1a; }
-  .tag.good { background: #12271d; color: #6fd39c; border-color: #24503a; }
+  .tag.bad { background: var(--tag-bad-bg); color: var(--tag-bad-fg); border-color: var(--tag-bad-line); }
+  .tag.warn { background: var(--tag-warn-bg); color: var(--tag-warn-fg); border-color: var(--tag-warn-line); }
+  .tag.good { background: var(--tag-good-bg); color: var(--tag-good-fg); border-color: var(--tag-good-line); }
   .right { text-align: right; color: var(--fg-faint); font-size: 12px; white-space: nowrap; padding-top: 2px; }
   .right .tk { font-family: var(--mono); color: var(--fg-dim); }
   .empty { color: var(--fg-faint); padding: 30px; text-align: center; }
@@ -129,9 +204,9 @@
   footer code { font-family: var(--mono); color: var(--fg-dim); }
   .toast {
     position: fixed; right: 18px; bottom: 18px; z-index: 50;
-    background: #2a1512; border: 1px solid #52251f; color: #f0a99c;
+    background: var(--bnr-err-bg); border: 1px solid var(--bnr-err-line); color: var(--bnr-err-fg);
     padding: 10px 14px; border-radius: 8px; max-width: 460px; font-size: 13px;
-    box-shadow: 0 8px 28px #0008;
+    box-shadow: var(--shadow);
   }
   .spin { display: inline-block; animation: r 1s linear infinite; }
   @keyframes r { to { transform: rotate(360deg); } }
@@ -154,6 +229,7 @@
   <div class="titlebar">
     <h1><span id="i18nTitle">DSH Control Panel</span><span id="i18nSubtitle"></span></h1>
     <div class="chips" id="chips"></div>
+    <button id="theme" type="button"></button>
     <button id="lang" title="Language / 语言">中</button>
     <button id="refresh"></button>
   </div>
@@ -222,6 +298,7 @@ const I18N = {
     title: 'DSH Control Panel',
     subtitle: 'Skills & MCP — switch off what you are not using',
     refresh: 'Refresh', refreshBusy: 'Loading…',
+    themeToLight: 'Switch to light theme', themeToDark: 'Switch to dark theme',
     tabSkills: 'Skills', tabMcp: 'MCP', tabAbout: 'About',
     skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} on · ~<b>${t}</b> tok/request`,
     mcpChip: (a, b) => `MCP <b>${a}</b>/${b} on`,
@@ -299,6 +376,7 @@ const I18N = {
     title: 'DSH 控制台',
     subtitle: 'Skills 与 MCP · 按需开关',
     refresh: '刷新', refreshBusy: '加载中…',
+    themeToLight: '切换到浅色主题', themeToDark: '切换到深色主题',
     tabSkills: 'Skills', tabMcp: 'MCP', tabAbout: '关于',
     skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} 开 · ~<b>${t}</b> tok/请求`,
     mcpChip: (a, b) => `MCP <b>${a}</b>/${b} 开`,
@@ -375,6 +453,7 @@ const I18N = {
 
 const REPO = 'https://github.com/YiShan-X/dsh-control-panel';
 const SUPPORTED = ['en', 'zh-CN'];
+const THEMES = ['dark', 'light'];
 
 /** Explicit `?lang=` wins, then the stored choice, then the browser locale. */
 function pickLang() {
@@ -392,6 +471,49 @@ const t = (k, ...args) => {
   const v = (I18N[lang] || I18N.en)[k] ?? I18N.en[k] ?? k;
   return typeof v === 'function' ? v(...args) : v;
 };
+
+// ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+
+/** True once the user has picked a theme; until then the OS decides. */
+const themeStored = () => {
+  try { return localStorage.getItem('dshcp.theme'); } catch { return null; }
+};
+
+/**
+ * Explicit `?theme=` wins, then the stored choice, then the OS preference.
+ * The query parameter exists so screenshots and tests are deterministic.
+ */
+function pickTheme() {
+  try {
+    const forced = new URLSearchParams(location.search).get('theme');
+    if (THEMES.includes(forced)) return forced;
+  } catch { /* no location.search in some embeddings */ }
+  const stored = themeStored();
+  if (THEMES.includes(stored)) return stored;
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+let theme = pickTheme();
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  const btn = $('#theme');
+  if (!btn) return;
+  // The glyph shows the theme you would switch *to*, which is the convention
+  // people expect from this kind of toggle.
+  btn.textContent = theme === 'dark' ? '☀' : '☾';
+  btn.title = t(theme === 'dark' ? 'themeToLight' : 'themeToDark');
+  btn.setAttribute('aria-label', btn.title);
+}
+
+// Follow the OS while the user has not overridden it.
+window.matchMedia?.('(prefers-color-scheme: light)').addEventListener?.('change', () => {
+  if (themeStored()) return;
+  theme = pickTheme();
+  applyTheme();
+});
 
 // ---------------------------------------------------------------------------
 // State + helpers
@@ -483,6 +605,7 @@ function render() {
   $('#skOff').textContent = t('disableFiltered');
   $('#skOn').textContent = t('enableFiltered');
   $('#refresh').textContent = t('refresh');
+  applyTheme();
 
   const s = state.skillSummary || {};
   const mcpOn = state.mcp.filter((m) => m.enabled).length;
@@ -696,6 +819,11 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
 }));
 
 $('#refresh').addEventListener('click', () => load(true));
+$('#theme').addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('dshcp.theme', theme); } catch { /* private mode */ }
+  applyTheme();
+});
 $('#lang').addEventListener('click', () => {
   lang = lang === 'zh-CN' ? 'en' : 'zh-CN';
   localStorage.setItem('dshcp.lang', lang);
@@ -751,6 +879,12 @@ async function bulk(enabled) {
 }
 $('#skOff').addEventListener('click', () => bulk(false));
 $('#skOn').addEventListener('click', () => bulk(true));
+
+// Paint the toggle glyph immediately rather than waiting for the first fetch to
+// resolve. This must come after `$` is initialised: `applyTheme` reads the
+// button, and calling it from the theme block above throws a TDZ ReferenceError
+// that blanks the entire page.
+applyTheme();
 
 load(false);
 </script>

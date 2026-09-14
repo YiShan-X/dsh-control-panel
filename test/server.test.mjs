@@ -76,6 +76,13 @@ describe('HTTP layer', () => {
     assert.equal(r.body.ok, true);
   });
 
+  it('answers the favicon probe without an error', async () => {
+    // A 404 here logs a console error and would trip the desktop smoke test's
+    // "no renderer errors" assertion for an unrelated reason.
+    const res = await fetch(`${base}/favicon.ico`);
+    assert.equal(res.status, 204);
+  });
+
   it('serves the UI at /', async () => {
     const res = await fetch(`${base}/`);
     assert.equal(res.status, 200);

@@ -5,6 +5,42 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-14
+
+### Added
+
+- **Light and dark themes.** Every surface colour is now a token defined once per
+  palette, so the whole UI switches rather than leaving dark islands behind. The
+  theme follows the OS until you pick one with the new header toggle, and the
+  choice persists. The theme is applied by a tiny inline script before first
+  paint, so a light-theme user never sees a dark flash on launch.
+- `?theme=` alongside `?lang=` for deterministic screenshots, plus a light-theme
+  capture in the documentation.
+
+### Changed
+
+- **The desktop window no longer shows the native menu bar.** It is developer
+  chrome; every entry already has a keyboard accelerator or a button in the page,
+  and `Alt` still reveals it, so DevTools and zoom stay reachable.
+
+### Fixed
+
+- **The smoke test could pass while the app was visibly broken.** Two causes,
+  both fixed:
+  - A renderer error now fails the run. Previously a page script could throw,
+    render nothing, and still exit 0 with a blank screenshot -- CI green, product
+    broken. `console-message` and `render-process-gone` are collected and any
+    error-level entry fails the run and prints what went wrong.
+  - Smoke and screenshot runs take their own `--user-data-dir`. The
+    single-instance lock is keyed on it, so a run started while the app was
+    already open silently became a "focus the other window" no-op, exiting 0
+    without producing anything. That case now fails loudly, with the fix in the
+    message.
+- A page-script `ReferenceError` that blanked the entire UI: the theme toggle was
+  painted by a module-level call made before `const $` was initialised.
+- `/favicon.ico` answers `204` instead of `404`, so the browser's automatic probe
+  no longer logs a console error.
+
 ## [1.0.1] - 2026-09-14
 
 Documentation and positioning only -- no behaviour change in the app.

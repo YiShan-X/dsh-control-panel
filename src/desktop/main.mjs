@@ -11,7 +11,7 @@
  * else already owns 8791.
  */
 
-import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, nativeTheme, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,8 @@ let bound = null;
 let win = null;
 /** @type {string|null} */
 let logFile = null;
+/** Renderer console errors seen during a smoke run. Any entry fails the run. */
+const rendererErrors = [];
 
 // ---------------------------------------------------------------------------
 // Logging: a packaged GUI app has no console, so keep a file for support.
@@ -118,9 +120,14 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: 'DSH Control Panel',
-    backgroundColor: '#0f1115',
+    // Matches the renderer's initial theme, so resizing neither flashes white
+    // nor flashes black before the page paints.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1115' : '#f4f6f9',
     show: false,
-    autoHideMenuBar: false,
+    // The menu bar is hidden: it is developer chrome, and every entry has a
+    // keyboard accelerator or a button in the UI. Alt still reveals it, which
+    // keeps DevTools and zoom reachable when something needs debugging.
+    autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -139,15 +146,43 @@ function createWindow() {
   // `npm run smoke` and by CI, which has no human to close a window. With
   // DSH_PANEL_SMOKE_CAPTURE it also writes documentation screenshots.
   if (process.env.DSH_PANEL_SMOKE) {
+    /*
+     * A broken page script used to produce a blank screenshot and a *successful*
+     * exit, which is the worst possible failure mode: CI green, product broken.
+     * Collect renderer errors and fail the run on any of them.
+     */
+    win.webContents.on('console-message', (event, level, message, line, source) => {
+      // Electron 44 passes an event object; older signatures pass positionals.
+      const lvl = event?.level ?? level;
+      const msg = event?.message ?? message;
+      const src = event?.sourceId ?? source;
+      const ln = event?.lineNumber ?? line;
+      if (lvl >= 2) console.log(`SMOKE console[${lvl}] ${src}:${ln} ${msg}`);
+      if (lvl >= 3) rendererErrors.push(`${src}:${ln} ${msg}`);
+    });
+    win.webContents.on('render-process-gone', (_e, details) => {
+      rendererErrors.push(`renderer gone: ${JSON.stringify(details)}`);
+    });
+
     win.webContents.once('did-finish-load', async () => {
       console.log('SMOKE ok: window loaded');
+      // The menu bar is chrome, not page content, so capturePage cannot prove it
+      // is hidden. Assert it from the window itself instead.
+      console.log(`SMOKE menuBarVisible=${win.isMenuBarVisible()}`);
       const capture = process.env.DSH_PANEL_SMOKE_CAPTURE;
       if (capture) {
         try {
           await captureScreenshots(capture);
         } catch (err) {
           console.log(`SMOKE capture failed: ${err.message}`);
+          rendererErrors.push(`capture: ${err.message}`);
         }
+      }
+      if (rendererErrors.length) {
+        console.log(`SMOKE fail: ${rendererErrors.length} renderer error(s)`);
+        for (const e of rendererErrors) console.log(`  - ${e}`);
+        app.exit(1);
+        return;
       }
       setTimeout(() => app.exit(0), 300);
     });
@@ -169,10 +204,14 @@ function createWindow() {
     }
   });
 
-  // Documentation screenshots are captured per language; `?lang=` lets the
-  // renderer be told which locale to use without touching stored settings.
-  const smokeLang = process.env.DSH_PANEL_SMOKE_LANG;
-  win.loadURL(smokeLang ? `${bound.url}/?lang=${encodeURIComponent(smokeLang)}` : bound.url);
+  // Documentation screenshots are captured per language and per theme; `?lang=`
+  // and `?theme=` let the renderer be told which to use without touching
+  // anything the user has stored.
+  const params = new URLSearchParams();
+  if (process.env.DSH_PANEL_SMOKE_LANG) params.set('lang', process.env.DSH_PANEL_SMOKE_LANG);
+  if (process.env.DSH_PANEL_SMOKE_THEME) params.set('theme', process.env.DSH_PANEL_SMOKE_THEME);
+  const query = params.toString();
+  win.loadURL(query ? `${bound.url}/?${query}` : bound.url);
 }
 
 function buildMenu() {
@@ -263,7 +302,11 @@ async function captureScreenshots(base) {
 
   await shot(base);
 
+  // Which secondary tabs to capture is the caller's choice: the full docs set
+  // wants all of them, an extra theme variant just wants the hero shot.
+  const wanted = (process.env.DSH_PANEL_SMOKE_TABS ?? 'mcp,about').split(',').filter(Boolean);
   for (const [tab, suffix] of [['mcp', '-mcp'], ['about', '-about']]) {
+    if (!wanted.includes(tab)) continue;
     const clicked = await win.webContents.executeJavaScript(
       `(() => { const b = document.querySelector('[data-tab="${tab}"]'); if (!b) return false; b.click(); return true; })()`,
     );
@@ -289,7 +332,18 @@ async function startServer() {
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
+  // A second instance normally just focuses the first window. In smoke mode
+  // that would silently do nothing and still exit 0, which reads as success --
+  // so fail loudly instead and name the fix.
+  if (process.env.DSH_PANEL_SMOKE) {
+    console.error(
+      'SMOKE fail: another instance already holds the single-instance lock. '
+      + 'Isolate the run with --user-data-dir=<temp dir>, as scripts/smoke.mjs does.',
+    );
+    app.exit(1);
+  } else {
+    app.quit();
+  }
 } else {
   app.on('second-instance', () => focusExistingWindow());
 

@@ -152,6 +152,12 @@ frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢
 
 ![关于标签页](docs/zh/screenshot-about.png)
 
+**界面。** 深色 / 浅色主题，默认跟随系统，点标题栏的开关可手动指定。界面同样是
+中英双语。桌面窗口**隐藏了原生菜单栏**——那是开发者装饰，里面每一项在页面里都有
+对应的按钮或快捷键；需要 DevTools 时按 <kbd>Alt</kbd> 唤出。
+
+![浅色主题](docs/screenshot-light.png)
+
 ---
 
 ## 安全保证

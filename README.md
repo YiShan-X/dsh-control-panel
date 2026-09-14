@@ -179,6 +179,14 @@ listed in a red banner with the exact reason.
 
 ![About tab](docs/screenshot-about.png)
 
+**Interface.** Light and dark themes, following your OS setting until you pick
+one from the toggle in the header. The UI is bilingual (English and Simplified
+Chinese) as well, and the desktop window hides the native menu bar — it is
+developer chrome, and every entry has a keyboard accelerator or a button in the
+page. Press <kbd>Alt</kbd> to reveal it if you need DevTools.
+
+![Light theme](docs/screenshot-light.png)
+
 ---
 
 ## Safety guarantees

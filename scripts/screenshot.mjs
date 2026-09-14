@@ -22,10 +22,15 @@ import { electronBinary } from './electron-binary.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TARGET = path.resolve(ROOT, process.argv[2] || 'docs/screenshot.png');
-/** @type {Array<{lang: string, file: string}>} */
+/**
+ * @type {Array<{lang: string, theme?: string, tabs?: string, file: string}>}
+ * The dark sets are the documentation default. One extra light capture exists
+ * so the theme toggle is visible in the README rather than merely claimed.
+ */
 const RUNS = [
   { lang: 'en', file: TARGET },
   { lang: 'zh-CN', file: path.join(path.dirname(TARGET), 'zh', path.basename(TARGET)) },
+  { lang: 'en', theme: 'light', tabs: '', file: path.join(path.dirname(TARGET), 'screenshot-light.png') },
 ];
 
 const DEMO_SKILLS = [
@@ -73,7 +78,7 @@ const HTTP_BLOCK = (key, url) => [
   '',
 ].join('\n');
 
-function buildSandbox(lang, target) {
+function buildSandbox({ lang, theme, tabs, target }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-shot-'));
   const home = path.join(root, 'home');
   const pool = path.join(root, 'pool');
@@ -137,6 +142,9 @@ function buildSandbox(lang, target) {
 
   return {
     root,
+    // Its own user-data dir, so the single-instance lock cannot turn this run
+    // into a silent no-op when the user already has the app open.
+    userData: path.join(root, 'userdata'),
     env: {
       ...process.env,
       DSH_PANEL_HOME: home,
@@ -148,6 +156,8 @@ function buildSandbox(lang, target) {
       DSH_PANEL_PROBE_WEB: '0',
       DSH_PANEL_SMOKE: '1',
       DSH_PANEL_SMOKE_LANG: lang,
+      DSH_PANEL_SMOKE_THEME: theme ?? 'dark',
+      DSH_PANEL_SMOKE_TABS: tabs ?? 'mcp,about',
       DSH_PANEL_SMOKE_CAPTURE: target,
     },
   };
@@ -156,10 +166,10 @@ function buildSandbox(lang, target) {
 const ELECTRON_BIN = await electronBinary();
 
 /** Run one capture set, resolving when Electron exits. */
-function captureOnce({ lang, file }) {
+function captureOnce({ lang, theme, tabs, file }) {
   return new Promise((resolve) => {
-    const sandbox = buildSandbox(lang, file);
-    const child = spawn(ELECTRON_BIN, ['.'], {
+    const sandbox = buildSandbox({ lang, theme, tabs, target: file });
+    const child = spawn(ELECTRON_BIN, [`--user-data-dir=${sandbox.userData}`, '.'], {
       cwd: ROOT,
       stdio: 'inherit',
       env: sandbox.env,
@@ -167,6 +177,13 @@ function captureOnce({ lang, file }) {
     const done = (code, message) => {
       fs.rmSync(sandbox.root, { recursive: true, force: true });
       if (message) process.stderr.write(message);
+      // A run that "succeeds" without writing its file is the failure mode this
+      // whole user-data isolation exists to prevent, so check rather than trust.
+      if ((code ?? 0) === 0 && !fs.existsSync(file)) {
+        resolve(1);
+        process.stderr.write(`no screenshot was written to ${file}\n`);
+        return;
+      }
       resolve(code ?? 1);
     };
     child.on('exit', (code) => done(code));
@@ -178,7 +195,7 @@ async function main() {
   // Sequential: the desktop app takes a single-instance lock, so two runs at
   // once would just make the second one focus the first one's window.
   for (const run of RUNS) {
-    process.stdout.write(`\n=== ${run.lang} -> ${path.relative(ROOT, run.file)} ===\n`);
+    process.stdout.write(`\n=== ${run.lang}/${run.theme ?? 'dark'} -> ${path.relative(ROOT, run.file)} ===\n`);
     const code = await captureOnce(run);
     if (code !== 0) process.exit(code);
   }

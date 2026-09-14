@@ -124,6 +124,14 @@ export function createPanelServer(config, options) {
       if (route === 'GET /api/health') return sendJson(res, 200, { ok: true, version });
       if (route === 'GET /api/state') return sendJson(res, 200, await buildState());
 
+      // Answer the browser's automatic favicon probe quietly. A 404 here logs a
+      // console error, which would trip the desktop smoke test's "no renderer
+      // errors" assertion for a reason that has nothing to do with a bug.
+      if (route === 'GET /favicon.ico') {
+        res.writeHead(204, { 'cache-control': 'max-age=86400' });
+        return res.end();
+      }
+
       if (route === 'POST /api/skills/toggle') {
         const { key, enabled, poolDir } = await readBody(req);
         if (!key || typeof key !== 'string') throw new HttpError(400, 'key is required');
