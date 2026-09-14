@@ -7,6 +7,8 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # One PR for the Electron pair: bumping one without the other is not a
+      # combination anyone should have to review separately.
       electron:
         patterns:
           - electron
@@ -18,5 +20,12 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      # Ungrouped, every action gets its own PR and therefore its own branch --
+      # five independent bumps is five branches for one review. Grouped, they
+      # arrive as a single PR the CI matrix can prove or disprove at once.
+      github-actions:
+        patterns:
+          - '*'
     commit-message:
       prefix: chore
