@@ -543,6 +543,17 @@ export function shellShimSpec(executable, args, platform = process.platform) {
 /** `where`/`which` results, so the lookup happens once per name per process. */
 const executableCache = new Map();
 
+/**
+ * Forget the resolution cache.
+ *
+ * Exported for tests: the cache is keyed by bare name, and a test that changes
+ * PATH to supply a stand-in command (a CI runner has no `dsh` installed) would
+ * otherwise be answered by a cached miss.
+ */
+export function clearExecutableCache() {
+  executableCache.clear();
+}
+
 /** Extensions Windows can start directly. `.cmd`/`.bat` still need `cmd /c`. */
 const WINDOWS_EXEC_EXTS = ['.exe', '.com', '.cmd', '.bat'];
 

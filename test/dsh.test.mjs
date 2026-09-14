@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
+  clearExecutableCache,
   dshWebStatus,
   findDshWebProcess,
   invalidateDshWebCache,
@@ -75,6 +76,49 @@ function makeFakeDsh() {
   };
 }
 
+/**
+ * Put a `dsh` on PATH for the duration of one test.
+ *
+ * CI runners do not have this CLI installed, so any assertion about resolving
+ * the *real* command has to supply one -- otherwise the test is really asserting
+ * something about the machine it happens to run on, which is how the first
+ * version of these tests passed locally and failed on every runner.
+ *
+ * @returns {{dir: string, restore: () => void}}
+ */
+function withFakeDshOnPath() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-path-'));
+  const script = path.join(dir, 'dsh-cli.mjs');
+  fs.writeFileSync(script, '// stand-in\n', 'utf8');
+
+  if (process.platform === 'win32') {
+    // Only the `.cmd` shim, plus the extensionless file `where` lists first --
+    // which is exactly what the resolver must NOT pick.
+    fs.writeFileSync(path.join(dir, 'dsh'), '#!/bin/sh\n', 'utf8');
+    fs.writeFileSync(
+      path.join(dir, 'dsh.cmd'),
+      `@ECHO off\r\n"${process.execPath}" "${script}" %*\r\n`,
+      'utf8',
+    );
+  } else {
+    const sh = path.join(dir, 'dsh');
+    fs.writeFileSync(sh, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, 'utf8');
+    fs.chmodSync(sh, 0o755);
+  }
+
+  const before = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${before ?? ''}`;
+  clearExecutableCache();
+  return {
+    dir,
+    restore: () => {
+      process.env.PATH = before;
+      clearExecutableCache();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
 describe('spawnable executables', () => {
   /*
    * The DSH tab's Start button shipped broken with `spawn dsh ENOENT`: `dsh` is
@@ -106,7 +150,7 @@ describe('spawnable executables', () => {
     assert.equal(spec.command, '/usr/local/bin/dsh.sh');
   });
 
-  it('unwraps an npm .cmd shim to the node launch it stands for', () => {
+  it('unwraps an npm .cmd shim to the node launch it stands for', { skip: process.platform !== 'win32' }, () => {
     // Verbatim shape of an npm global shim (`dsh.cmd` on this machine). The
     // program token is `%_prog%`, not a path, and `%dp0%` already ends in a
     // separator -- both details broke earlier attempts at this parser.
@@ -210,9 +254,19 @@ describe('spawnable executables', () => {
   });
 
   it('finds this machine\'s dsh as something it can actually spawn', { skip: process.platform !== 'win32' }, () => {
-    const resolved = resolveExecutable('dsh');
-    assert.ok(resolved, 'expected dsh to be on PATH in this environment');
-    assert.match(resolved, /\.(exe|com|cmd|bat)$/i, `unlaunchable path resolved: ${resolved}`);
+    // The runner has no `dsh`; supply one, so the assertion is about the
+    // resolver rather than about the image Node happens to run on.
+    const fake = withFakeDshOnPath();
+    try {
+      const resolved = resolveExecutable('dsh');
+      assert.ok(resolved, 'expected the stand-in dsh to resolve');
+      assert.match(resolved, /\.(exe|com|cmd|bat)$/i, `unlaunchable path resolved: ${resolved}`);
+      // The extensionless file `where` lists first is a POSIX script Windows
+      // cannot start; picking it is the bug this resolver exists to prevent.
+      assert.notEqual(path.basename(resolved), 'dsh');
+    } finally {
+      fake.restore();
+    }
   });
 
   it('reports a missing command instead of failing with a bare ENOENT', async () => {
