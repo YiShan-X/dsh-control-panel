@@ -252,6 +252,42 @@ describe('version output and manifests', () => {
     assert.equal(read.source, 'missing');
     assert.match(read.error, /not found on PATH/);
   });
+
+  it('falls back to the manifest and says so when the command is broken', async () => {
+    /*
+     * A shim can outlive the installation it points at. The version on disk is
+     * still a real answer, but it is weaker evidence than `dsh --version`
+     * printing it -- so `source` has to distinguish the two. The renderer reads
+     * this field to decide which sentence to show, and reporting "read from
+     * dsh --version" here would misreport exactly when the command is broken.
+     */
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-broken-'));
+    const pkgDir = path.join(root, 'node_modules', PKG);
+    fs.mkdirSync(path.join(pkgDir, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: PKG, version: '9.9.9' }), 'utf8');
+    // Exits non-zero: the install is there, the command is not runnable.
+    const bin = path.join(pkgDir, 'lib', 'bin.js');
+    fs.writeFileSync(bin, 'process.exit(3);\n', 'utf8');
+
+    let shim;
+    if (process.platform === 'win32') {
+      shim = path.join(root, 'dsh.cmd');
+      fs.writeFileSync(shim, `@ECHO off\r\n"${process.execPath}" "${bin}" %*\r\n`, 'utf8');
+    } else {
+      shim = path.join(root, 'dsh');
+      fs.writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${bin}" "$@"\n`, 'utf8');
+      fs.chmodSync(shim, 0o755);
+    }
+
+    const read = await readInstalledVersion({
+      dshExecutable: { path: shim, name: 'dsh', source: 'default' },
+    });
+    assert.equal(read.version, '9.9.9');
+    assert.equal(read.source, 'package.json');
+    assert.equal(read.packagePath, pkgDir);
+    assert.match(read.error, /could not read dsh --version/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 });
 
 describe('registry client', () => {

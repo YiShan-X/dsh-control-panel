@@ -1800,11 +1800,19 @@ function renderVersion() {
   rows.push(`<tr><td>${esc(t('verPackage'))}</td><td><code>${esc(v.packageName || '')}</code></td></tr>`);
 
   // How the installed version was learned. A version read from the manifest is
-  // not the same evidence as one the command itself printed, and when neither
-  // worked the reason belongs on screen, not in a log.
-  const source = v.installed
-    ? t('verSourceDsh', esc(v.installedCommand || 'dsh --version'))
-    : esc(v.installedError || t('verSourceMissing'));
+  // not the same evidence as one the command itself printed, so the two are
+  // labelled differently -- claiming "read from dsh --version" for a number that
+  // actually came off disk would misreport exactly when the command is broken,
+  // which is the one case where the distinction matters.
+  let source;
+  if (!v.installed) {
+    source = esc(v.installedError || t('verSourceMissing'));
+  } else if (v.installedSource === 'package.json') {
+    source = esc(t('verSourceManifest'))
+      + (v.installedError ? ` · <span class="warn">${esc(v.installedError)}</span>` : '');
+  } else {
+    source = t('verSourceDsh', esc(v.installedCommand || 'dsh --version'));
+  }
   rows.push(`<tr><td>${esc(t('verInstalled'))}</td>
     <td><code>${esc(v.installed || '—')}</code>
     <div class="form-hint">${source}</div></td></tr>`);

@@ -464,11 +464,6 @@ const releaseCache = { at: 0, value: null };
  */
 let lastUpdateAt = null;
 
-/** @returns {string|null} */
-export function getLastUpdateAt() {
-  return lastUpdateAt;
-}
-
 /**
  * Forget every cached answer. Called after an install.
  *
@@ -482,11 +477,6 @@ export function invalidateVersionCache() {
   releaseCache.at = 0;
   releaseCache.value = null;
   clearExecutableCache();
-}
-
-/** Peek at the last registry answer without causing a request. */
-export function peekReleaseCache() {
-  return releaseCache.value;
 }
 
 /**
@@ -582,10 +572,12 @@ export async function buildVersionState(config, opts = {}) {
   return {
     packageName: release?.packageName ?? config.dshPackage,
     installed: installedVersionString,
+    // Which of the two readers answered. The UI has to say this: a version that
+    // came from the manifest on disk is weaker evidence than one the command
+    // itself printed, and the card names which it is.
     installedSource: installed.source,
     installedError: installed.error,
     installedCommand: installed.command,
-    installedFrom: installed.source === 'dsh --version' ? 'dsh --version' : installed.source,
     packagePath: installed.packagePath,
     channels,
     updateAvailable: Boolean(winner),
