@@ -70,6 +70,23 @@ Rules:
 - Measure, don't assume: `Get-Process -Id <pid> | Select MainWindowHandle`.
   `0` = hidden, non-zero = a window the user will see.
 
+### A global CLI is a symlink on POSIX and a `.cmd` on Windows
+
+The asymmetry bites wherever you need to find *the package behind* a command
+(`manifestSearchStart` in `src/core/dshVersion.mjs`). npm installs the two
+platforms differently:
+
+- **Windows** writes a `.cmd` shim whose text names the script — readable, and
+  `unwrapNpmShim()` turns it into `node <script>`.
+- **POSIX** writes a **symlink** from the bin directory into the package
+  (`.../bin/dsh -> ../lib/node_modules/@deepseek-ai/dsh/lib/bin.js`). There is no
+  shim text to read; the link has to be resolved with `fs.realpathSync` first.
+
+Code that only handles the `.cmd` shape works on Windows and silently finds
+nothing on Linux and macOS. A test that builds a *standalone shell script* as the
+POSIX stand-in hides this completely, because a standalone script is not what the
+platform actually installs — build a symlink instead.
+
 ### Packaged vs. run-from-source
 
 `build/` is **not** inside the asar. electron-builder's `files` decides what

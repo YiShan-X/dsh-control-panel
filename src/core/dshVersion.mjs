@@ -287,6 +287,37 @@ export function findPackageManifest(startDir, packageName) {
 }
 
 /**
+ * Where to start looking for the manifest behind a resolved `dsh`.
+ *
+ * The two platforms install a global CLI differently, so the walk has to start
+ * from the right place on each:
+ *
+ *   - **POSIX** puts a *symlink* in the bin directory pointing at the package
+ *     (`.../bin/dsh -> ../lib/node_modules/@deepseek-ai/dsh/lib/bin.js`), so the
+ *     symlink has to be resolved first. Skipping that step looked like it worked
+ *     on Windows and silently found no manifest at all on Linux and macOS.
+ *   - **Windows** writes a `.cmd` shim whose text names the script, because
+ *     libuv cannot execute a batch file at all -- hence `unwrapNpmShim`.
+ *
+ * A path that is neither (a hand-written wrapper) yields its own directory, and
+ * the walk simply fails to find a manifest. That is the honest outcome: guessing
+ * a version from an unrelated `package.json` would be worse than reporting none.
+ *
+ * @param {string} execPath
+ * @returns {string}
+ */
+function manifestSearchStart(execPath) {
+  let real = execPath;
+  try {
+    real = fs.realpathSync(execPath);
+  } catch { /* a path that does not resolve is still worth walking from */ }
+
+  const unwrapped = unwrapNpmShim(real);
+  if (unwrapped) return path.dirname(unwrapped.prefixArgs[0]);
+  return path.dirname(real);
+}
+
+/**
  * Read the installed DSH version.
  *
  * `dsh --version` is authoritative and quick (~0.24 s), so it is tried first.
@@ -306,9 +337,7 @@ export async function readInstalledVersion(opts = {}) {
     // Derive the manifest location from the shim before running anything: it is
     // the same directory either way, and having it lets the fallback run even
     // when the spawn itself fails.
-    const unwrapped = unwrapNpmShim(exe.path);
-    const scriptDir = unwrapped ? path.dirname(unwrapped.prefixArgs[0]) : path.dirname(exe.path);
-    fallback = findPackageManifest(scriptDir, null);
+    fallback = findPackageManifest(manifestSearchStart(exe.path), null);
   }
 
   if (!exe.path) {

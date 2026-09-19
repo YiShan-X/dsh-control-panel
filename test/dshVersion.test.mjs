@@ -260,23 +260,29 @@ describe('version output and manifests', () => {
      * printing it -- so `source` has to distinguish the two. The renderer reads
      * this field to decide which sentence to show, and reporting "read from
      * dsh --version" here would misreport exactly when the command is broken.
+     *
+     * The shim is built the way each platform's npm really installs one: a
+     * symlink into the package on POSIX, a `.cmd` naming the script on Windows.
+     * Modelling it as a standalone script on POSIX is what let the first version
+     * of this test pass on Windows while the fallback found nothing on Linux.
      */
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-broken-'));
-    const pkgDir = path.join(root, 'node_modules', PKG);
+    const pkgDir = path.join(root, 'lib', 'node_modules', PKG);
     fs.mkdirSync(path.join(pkgDir, 'lib'), { recursive: true });
     fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: PKG, version: '9.9.9' }), 'utf8');
     // Exits non-zero: the install is there, the command is not runnable.
     const bin = path.join(pkgDir, 'lib', 'bin.js');
     fs.writeFileSync(bin, 'process.exit(3);\n', 'utf8');
 
+    const binDir = path.join(root, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
     let shim;
     if (process.platform === 'win32') {
-      shim = path.join(root, 'dsh.cmd');
+      shim = path.join(binDir, 'dsh.cmd');
       fs.writeFileSync(shim, `@ECHO off\r\n"${process.execPath}" "${bin}" %*\r\n`, 'utf8');
     } else {
-      shim = path.join(root, 'dsh');
-      fs.writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${bin}" "$@"\n`, 'utf8');
-      fs.chmodSync(shim, 0o755);
+      shim = path.join(binDir, 'dsh');
+      fs.symlinkSync(bin, shim);
     }
 
     const read = await readInstalledVersion({
@@ -284,7 +290,8 @@ describe('version output and manifests', () => {
     });
     assert.equal(read.version, '9.9.9');
     assert.equal(read.source, 'package.json');
-    assert.equal(read.packagePath, pkgDir);
+    // Resolved through the symlink, so this is the package directory itself.
+    assert.equal(read.packagePath, fs.realpathSync(pkgDir));
     assert.match(read.error, /could not read dsh --version/);
     fs.rmSync(root, { recursive: true, force: true });
   });
