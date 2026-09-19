@@ -586,10 +586,6 @@ export async function buildVersionState(config, opts = {}) {
     checkedAt: release?.checkedAt ?? null,
     checkError: release?.error ?? null,
     canCheck: resolveExecutable('npm') !== null,
-    canUpdate: installedVersionString !== null && resolveExecutable('npm') !== null,
-    installCommand: winner
-      ? `npm install -g ${config.dshPackage}@${winner.version}`
-      : null,
     lastUpdateAt,
     // Only an install that happened *after* the service booted is waiting to be
     // applied: the running process keeps the code it started with. An update
@@ -724,7 +720,6 @@ export async function updateDsh(config, requested, opts = {}) {
     return {
       changed,
       target,
-      requested: String(requested),
       before,
       after: after.version,
       // True only when the number moved. npm exiting 0 proves npm ran, nothing
@@ -735,7 +730,6 @@ export async function updateDsh(config, requested, opts = {}) {
       stdout,
       stderr,
       restartRequired: needsRestart(lastUpdateAt, opts.dshWebStartedAt),
-      liveVersionSource: after.source,
     };
   } finally {
     updateInFlight = null;

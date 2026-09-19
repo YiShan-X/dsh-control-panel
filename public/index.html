@@ -864,6 +864,7 @@ const I18N = {
     verTitle: 'DSH version',
     verPackage: 'Package',
     verInstalled: 'Installed',
+    verLocation: 'Installed at',
     verNotDetected: 'not detected',
     verUpToDate: 'up to date',
     verAvailable: (v) => `update available · ${v}`,
@@ -1055,6 +1056,7 @@ const I18N = {
     verTitle: 'DSH 版本',
     verPackage: 'npm 包',
     verInstalled: '已安装',
+    verLocation: '安装位置',
     verNotDetected: '未检测到',
     verUpToDate: '已是最新',
     verAvailable: (v) => `有新版本 · ${v}`,
@@ -1817,6 +1819,14 @@ function renderVersion() {
     <td><code>${esc(v.installed || '—')}</code>
     <div class="form-hint">${source}</div></td></tr>`);
 
+  // Where it is installed. This is the single most useful field when a machine
+  // has two DSH installations and an update "succeeds" without changing the
+  // version on PATH.
+  if (v.packagePath) {
+    rows.push(`<tr><td>${esc(t('verLocation'))}</td>
+      <td><code title="${esc(v.packagePath)}">${esc(short(v.packagePath))}</code></td></tr>`);
+  }
+
   for (const c of channels) {
     const when = c.publishedAt ? fmtTime(c.publishedAt) : '—';
     let action;
@@ -1848,6 +1858,11 @@ function renderVersion() {
   const hint = $('#verHint');
   if (versionUpdating) {
     hint.innerHTML = esc(t('verWorking', state.dshVersion?.newest?.version || ''));
+  } else if (v.restartRequired) {
+    // The most actionable state, so it outranks the check bookkeeping below:
+    // the install landed after the service booted, so the new code is on disk
+    // and not in the process.
+    hint.innerHTML = `${esc(t('verRestartHint'))} <span style="color:var(--fg-faint)">${esc(fmtTime(v.lastUpdateAt))}</span>`;
   } else if (v.checkError) {
     hint.innerHTML = `<span class="warn">${esc(t('verCheckError', v.checkError))}</span>`;
   } else if (v.canCheck === false) {

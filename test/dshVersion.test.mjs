@@ -389,7 +389,10 @@ describe('version state', () => {
     const st = await buildVersionState(tools.config(), { fresh: true, release: true });
     assert.equal(st.updateAvailable, false);
     assert.equal(st.newest, null);
-    assert.equal(st.installCommand, null);
+    // No channel is newer, so there is nothing to offer -- but the channels are
+    // still reported, which is what lets the card show "current" against each.
+    assert.equal(st.channels.length, 3);
+    assert.equal(st.channels.every((c) => c.newer === false), true);
   });
 
   it('never touches the network unless asked', async () => {
@@ -523,7 +526,7 @@ describe('version routes over HTTP', () => {
     assert.equal(body.ok, true);
     assert.equal(body.dshVersion.installed, '0.1.5-rc.2');
     assert.equal(body.dshVersion.updateAvailable, true);
-    assert.equal(body.dshVersion.installCommand, `npm install -g ${PKG}@0.1.6-alpha.2`);
+    assert.deepEqual(body.dshVersion.newest, { version: '0.1.6-alpha.2', channel: 'alpha' });
   });
 
   it('installs through the route and reports the pending restart', async () => {
