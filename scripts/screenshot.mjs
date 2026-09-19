@@ -157,7 +157,10 @@ function buildSandbox({ lang, theme, tabs, target }) {
       DSH_PANEL_SMOKE: '1',
       DSH_PANEL_SMOKE_LANG: lang,
       DSH_PANEL_SMOKE_THEME: theme ?? 'dark',
-      DSH_PANEL_SMOKE_TABS: tabs ?? 'mcp,about',
+      // The DSH tab is in the docs set because it is where service control and
+      // the version cards live -- the two things the README describes in prose
+      // and a reader otherwise has to imagine.
+      DSH_PANEL_SMOKE_TABS: tabs ?? 'mcp,dsh,about',
       DSH_PANEL_SMOKE_CAPTURE: target,
     },
   };

@@ -481,6 +481,41 @@ async function startServer() {
     restart: () => restartDshWeb(),
   };
 
+  /*
+   * Synthetic process status for documentation captures.
+   *
+   * `scripts/screenshot.mjs` sets `DSH_PANEL_PROBE_WEB=0` so its images cannot
+   * depend on what this machine happens to be running -- but a host that wires
+   * real process control *bypasses that flag* (`readDshStatus` prefers
+   * `dshControl`), so the DSH tab screenshot ended up printing this machine's
+   * real pid, start time and uptime. That is exactly the leak the screenshot
+   * script exists to prevent, and the leak only became visible once the DSH tab
+   * was added to the capture set.
+   *
+   * A fixed, plausible status is also simply better documentation: the rest of
+   * that script's fixtures are synthetic too, and a demo image should not change
+   * depending on whether the machine generating it is busy. Start and stop stay
+   * wired to the real implementation -- capturing never clicks them.
+   */
+  const captureStatus = process.env.DSH_PANEL_SMOKE && process.env.DSH_PANEL_SMOKE_CAPTURE
+    ? {
+      running: true,
+      pid: 4242,
+      cmdline: '"C:\\Program Files\\nodejs\\node.exe" "C:\\...\\dsh\\lib\\bin.js" web',
+      // Relative to capture time so the uptime reads sensibly and stays stable.
+      startedAt: new Date(Date.now() - (2 * 3600 + 14 * 60) * 1000).toISOString(),
+      uptimeMs: (2 * 3600 + 14 * 60) * 1000,
+      cpuMs: 41230,
+      rssBytes: 214 * 1024 * 1024,
+      probeMs: 6,
+      probed: true,
+    }
+    : null;
+
+  if (captureStatus) {
+    dshControl.status = () => captureStatus;
+  }
+
   const { server } = createPanelServer(config, {
     publicDir: path.join(ROOT, 'public'),
     version: app.getVersion(),

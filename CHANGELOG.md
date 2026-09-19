@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The documentation screenshots were printing this machine's real process
+  details.** `scripts/screenshot.mjs` sets `DSH_PANEL_PROBE_WEB=0` so its images
+  cannot depend on what the machine happens to be running, but a host that wires
+  real process control bypasses that flag — so the newly added DSH tab
+  screenshot showed a real pid, start time and uptime, which is precisely the
+  leak the synthetic fixtures exist to prevent. A capture run now feeds the DSH
+  tab a fixed, plausible status. Adding the DSH tab to the docs set is what made
+  it visible; the hero, MCP and About shots were never affected.
+
 ## [1.3.1] - 2026-09-19
 
 ### Fixed
