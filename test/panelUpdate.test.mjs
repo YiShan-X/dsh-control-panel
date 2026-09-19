@@ -16,6 +16,7 @@ import { afterEach, describe, it } from 'node:test';
 import { resolveConfig } from '../src/core/config.mjs';
 import { HttpError } from '../src/core/errors.mjs';
 import {
+  archTokens,
   assetUrl,
   buildPanelUpdateState,
   downloadPanelUpdate,
@@ -59,6 +60,28 @@ files:
     sha512: ddd=
     size: 4
 releaseDate: '2026-09-19T09:00:00.000Z'
+`;
+
+/**
+ * The real `latest-linux.yml` published with release 1.3.0, verbatim.
+ *
+ * These names are the reason this fixture exists: electron-builder calls an x64
+ * AppImage `x86_64` and an x64 deb `amd64`, so matching Node's `process.arch`
+ * (`x64`) against them found nothing on Linux at all. That shipped in 1.3.0 and
+ * was only visible once a release existed to look at.
+ */
+const LINUX_FEED = `version: 1.3.0
+files:
+  - url: dsh-control-panel-1.3.0-x86_64.AppImage
+    sha512: A1HSyub1DKmQFng1SpbMdbOG/GfU0iFlwbpa9a5DFSKALVkYSVpwJfmmmln1p9qhptTQU10lpsoiRd0wKf2moA==
+    size: 124941478
+    blockMapSize: 132282
+  - url: dsh-control-panel-1.3.0-amd64.deb
+    sha512: f0gGkQ8cPqmNKbkvzfvn/ABt/Fsez6kkCtUW5yCK4GAI7wiqPSiDSdn1K2EbNLxvXV8fzAHF/RS+MlWSRWJx0Q==
+    size: 98783948
+path: dsh-control-panel-1.3.0-x86_64.AppImage
+sha512: A1HSyub1DKmQFng1SpbMdbOG/GfU0iFlwbpa9a5DFSKALVkYSVpwJfmmmln1p9qhptTQU10lpsoiRd0wKf2moA==
+releaseDate: '2026-09-19T09:39:49.146Z'
 `;
 
 const cleanups = [];
@@ -143,6 +166,46 @@ describe('artifact selection', () => {
     // arm64 Windows files exist, but not arm64 macOS ones in this feed.
     assert.equal(pickAsset(files, 'darwin', 'arm64'), null);
     assert.equal(pickAsset(files, 'linux', 'x64'), null);
+  });
+
+  it('matches the Linux names electron-builder actually publishes', () => {
+    /*
+     * `x86_64.AppImage` and `amd64.deb`, not `x64.*`. This shipped broken in
+     * 1.3.0: the Linux updater offered nothing because it looked for a token
+     * electron-builder never writes.
+     */
+    const files = parseFeed(LINUX_FEED).files;
+    const appImage = pickAsset(files, 'linux', 'x64');
+    assert.equal(appImage.url, 'dsh-control-panel-1.3.0-x86_64.AppImage');
+    assert.equal(appImage.kind, 'installer');
+
+    // And the deb is still found for the same arch when there is no AppImage.
+    const debOnly = files.filter((f) => f.url.endsWith('.deb'));
+    assert.equal(pickAsset(debOnly, 'linux', 'x64').url, 'dsh-control-panel-1.3.0-amd64.deb');
+    assert.equal(pickAsset(debOnly, 'linux', 'x64').kind, 'package');
+  });
+
+  it('names the arch tokens per platform', () => {
+    assert.deepEqual(archTokens('linux', 'x64'), ['x86_64', 'amd64', 'x64']);
+    assert.deepEqual(archTokens('linux', 'arm64'), ['arm64']);
+    assert.deepEqual(archTokens('win32', 'x64'), ['x64']);
+    assert.deepEqual(archTokens('darwin', 'arm64'), ['arm64']);
+  });
+
+  it('prefers the setup installer over the portable build', () => {
+    // The portable build carries no architecture in its name, so it must not
+    // shadow the architecture-matched installer.
+    const files = parseFeed(`version: 1.3.0
+files:
+  - url: dsh-control-panel-1.3.0-portable.exe
+    sha512: p=
+    size: 1
+  - url: dsh-control-panel-1.3.0-arm64-setup.exe
+    sha512: s=
+    size: 2
+`).files;
+    assert.equal(pickAsset(files, 'win32', 'arm64').url, 'dsh-control-panel-1.3.0-arm64-setup.exe');
+    assert.equal(pickAsset(files, 'win32', 'x64').url, 'dsh-control-panel-1.3.0-portable.exe');
   });
 
   it('falls back to the portable build when there is no setup exe', () => {

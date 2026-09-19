@@ -162,8 +162,17 @@ instead of `api.github.com/repos/.../releases/latest`:
 Artifact preference (`pickAsset`) encodes what a person would pick by hand: the
 NSIS `-setup.exe` over the portable build (running the portable opens a *second*
 copy), the `.dmg` over the `.zip` that exists for electron-updater, `.AppImage`
-over `.deb`. The architecture is in every filename except the Windows portable
-build.
+over `.deb`.
+
+**The architecture token is not `process.arch`.** electron-builder names an x64
+AppImage `x86_64` and an x64 deb `amd64`; only Windows and macOS use `x64`. This
+shipped broken in 1.3.0 — the Linux updater found no artifact and offered
+nothing — and the only thing that could have caught it was reading the asset list
+of a real release (`archTokens` in `panelUpdate.mjs` now owns the mapping, and
+`test/panelUpdate.test.mjs` uses the verbatim `latest-linux.yml` of 1.3.0 as a
+fixture). The Windows portable build additionally carries **no** arch token at
+all, so it is matched without one — and ordered below the installer for that
+reason and because running it would open a second copy.
 
 ### Node's `fetch` ignores the proxy environment
 

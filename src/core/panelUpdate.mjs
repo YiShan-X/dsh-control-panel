@@ -113,6 +113,54 @@ export function releasePageUrl(repo) {
 }
 
 /**
+ * The architecture tokens electron-builder actually puts in an artifact name.
+ *
+ * Node's `process.arch` is **not** what ends up in the filename on Linux: the
+ * AppImage target names an x64 build `x86_64` and the deb target names the same
+ * build `amd64`. Matching `x64` alone therefore found nothing on Linux at all --
+ * which the v1.3.0 release made visible only because it was the first release
+ * published after this code existed. Windows and macOS use `x64`/`arm64`
+ * verbatim.
+ *
+ * Ordered most-specific first; the caller tries each in turn.
+ *
+ * @param {string} platform
+ * @param {string} arch
+ * @returns {string[]}
+ */
+export function archTokens(platform, arch) {
+  if (platform === 'linux') {
+    if (arch === 'x64') return ['x86_64', 'amd64', 'x64'];
+    return [arch];
+  }
+  return [arch];
+}
+
+/**
+ * What to install, in the order a person would prefer it.
+ *
+ * `archRequired: false` marks an artifact whose name carries no architecture at
+ * all -- the Windows portable build is `${name}-${version}-portable.exe`. That
+ * is also why it sits *below* the setup installer: a portable build would open a
+ * second copy rather than upgrade the installed one.
+ */
+const PREFERENCES = {
+  win32: [
+    { kind: 'installer', suffix: '-setup.exe', archRequired: true },
+    { kind: 'portable', suffix: '-portable.exe', archRequired: false },
+    { kind: 'archive', suffix: '.zip', archRequired: true },
+  ],
+  darwin: [
+    { kind: 'installer', suffix: '.dmg', archRequired: true },
+    { kind: 'archive', suffix: '.zip', archRequired: true },
+  ],
+  linux: [
+    { kind: 'installer', suffix: '.AppImage', archRequired: true },
+    { kind: 'package', suffix: '.deb', archRequired: true },
+  ],
+};
+
+/**
  * Pick the artifact to install for this platform and architecture.
  *
  * Ordered by what a person actually wants to run, not by what happens to be
@@ -125,9 +173,8 @@ export function releasePageUrl(repo) {
  *     electron-updater consumes, not something to hand a user.
  *   - **Linux**: the `.AppImage`, falling back to `.deb`.
  *
- * The architecture is part of every artifact name except the Windows portable
- * build, so a mismatch is filtered out here rather than downloaded and then
- * refused by the OS.
+ * A mismatch is filtered out here rather than downloaded and then refused by the
+ * OS.
  *
  * @param {Array<{url: string, sha512: string|null, size: number|null}>} files
  * @param {string} platform
@@ -135,27 +182,17 @@ export function releasePageUrl(repo) {
  * @returns {{url: string, sha512: string|null, size: number|null, kind: string}|null}
  */
 export function pickAsset(files, platform = process.platform, arch = process.arch) {
-  /** @type {Record<string, Array<{test: (n: string) => boolean, kind: string}>>} */
-  const preferences = {
-    win32: [
-      { test: (n) => n.endsWith(`-${arch}-setup.exe`), kind: 'installer' },
-      { test: (n) => n.endsWith(`-${arch}-portable.exe`), kind: 'portable' },
-      { test: (n) => n.endsWith('-portable.exe'), kind: 'portable' },
-      { test: (n) => n.endsWith(`-${arch}.zip`), kind: 'archive' },
-    ],
-    darwin: [
-      { test: (n) => n.endsWith(`-${arch}.dmg`), kind: 'installer' },
-      { test: (n) => n.endsWith(`-${arch}.zip`), kind: 'archive' },
-    ],
-    linux: [
-      { test: (n) => n.endsWith(`-${arch}.AppImage`), kind: 'installer' },
-      { test: (n) => n.endsWith(`-${arch}.deb`), kind: 'package' },
-    ],
-  };
-
-  for (const candidate of preferences[platform] ?? []) {
-    const file = files.find((f) => candidate.test(f.url));
-    if (file) return { ...file, kind: candidate.kind };
+  const tokens = archTokens(platform, arch);
+  for (const pref of PREFERENCES[platform] ?? []) {
+    if (!pref.archRequired) {
+      const bare = files.find((f) => f.url.endsWith(pref.suffix));
+      if (bare) return { ...bare, kind: pref.kind };
+      continue;
+    }
+    for (const token of tokens) {
+      const file = files.find((f) => f.url.endsWith(`-${token}${pref.suffix}`));
+      if (file) return { ...file, kind: pref.kind };
+    }
   }
   return null;
 }

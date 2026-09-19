@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-19
+
+### Fixed
+
+- **The Linux updater offered nothing.** `pickAsset` matched the architecture in
+  an artifact name the way Node spells it (`x64`), but electron-builder names an
+  x64 AppImage `x86_64` and an x64 deb `amd64`. The 1.3.0 self-update therefore
+  found no artifact on Linux and reported "this release publishes no artifact for
+  linux/x64" instead of offering the download. It was found by reading the asset
+  list of the release 1.3.0 had just published, which is the only way it *could*
+  have been found: no test written beforehand and no local run on Windows
+  produces those filenames. Matching now tries the tokens each target really
+  uses, and the tests use the verbatim `latest-linux.yml` of 1.3.0 as their
+  fixture.
+
 ## [1.3.0] - 2026-09-19
 
 ### Added
