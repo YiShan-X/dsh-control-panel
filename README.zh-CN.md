@@ -207,6 +207,8 @@ frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | 停用的 MCP 块 |
 | `DSH_PROFILES_DIR` | `$DSH_HOME/profiles` | DSH 配置档目录——插件按配置档安装 |
 | `DSH_PANEL_DSH_PACKAGE` | `@deepseek-ai/dsh` | 版本卡片跟踪并安装的 npm 包 |
+| `DSH_PANEL_REPO` | `YiShan-X/dsh-control-panel` | 面板自身更新检查读取的 `owner/repo` |
+| `DSH_PANEL_DOWNLOAD_DIR` | `~/Downloads` | 更新安装包的保存位置 |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch 目录 |
 | `DSH_PANEL_CC_SWITCH` | `1` | 设为 `0` 可完全忽略 cc-switch |
 | `DSH_WEB_CMD` | `dsh web` | **DSH** 标签页「启动」按钮执行的命令 |
@@ -240,6 +242,29 @@ frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢
   卡片就会给出重启入口。
 
 安装是全局的、构建包未签名，因此面板会先弹确认框并把新旧两个版本号都写清楚。
+
+### 面板自身也能检查并更新
+
+**关于**标签页里有另一张独立的卡片，管的是面板自己的版本——「这个应用是不是最新的」
+和「DSH 是不是最新的」是两个不同的问题，答案来源也不同：
+
+- **当前版本**来自宿主（桌面版取 `app.getVersion()`，命令行模式读 `package.json`），
+  所以不会和它自己对外声称的版本不一致。
+- **已发布版本**来自 electron-builder 自己的 `latest*.yml`，作为 Release 资产下载。
+  刻意不走 GitHub API：API 按 IP 限流（未认证每小时 60 次），而资产文件跟普通文件一样
+  直接可取，**并且**带着每个安装包的 sha512 和大小。
+- **下载会校验。** 在把约 110 MB 的安装包交给系统执行之前先核对摘要；不匹配就删掉文件，
+  而不是留在那里等着你误运行。如果某个版本确实没公布摘要，面板会明说「无法校验」，
+  而不是假装校验过了。
+- **挑的安装包就是你会手动挑的那个**：Windows 用 `-setup.exe`（不用 portable，那会开出
+  第二份副本），macOS 用 `.dmg`（不用旁边那个给 electron-updater 用的 `.zip`），
+  Linux 用 `.AppImage` 或 `.deb`，并且按文件名里的架构匹配。
+- **只有已安装的应用才会出现更新按钮。** 从源码运行时卡片会直说，接口也返回 501，
+  而不是给一个你根本没在跑的程序下载安装包。
+- **`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 都生效。** Node 内置的 `fetch` 会忽略它们，
+  所以这个检查走面板自带的轻量 HTTP 客户端，HTTPS 走 `CONNECT` 加隧道内 TLS 握手。
+
+构建包未签名，启动安装程序时系统会提示未知开发者——没有代码签名证书的项目就是这样。
 
 ### 配置中枢是可选的
 

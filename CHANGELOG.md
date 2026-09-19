@@ -7,8 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-19
+
 ### Added
 
+- **Panel self-update.** The About tab reports the running version, whether a
+  newer release exists, and can install it. The version feed is
+  electron-builder's own `latest*.yml` published as a release asset, chosen over
+  the GitHub API for a concrete reason: the API is rate-limited per IP (60/hour
+  unauthenticated, and this very session was answered 403 by it), while the asset
+  is served like any other file *and* carries the **sha512 and size** of every
+  artifact. That digest is what lets the download be verified before a ~110 MB
+  installer is handed to the OS to execute; a mismatch deletes the file rather
+  than leaving it where a user could run it, and a feed with no digest still
+  downloads but reports `verified: null` instead of implying a check it did not
+  make. Artifact choice follows what a person would actually run: the NSIS
+  `-setup.exe` on Windows (not the portable build, which would open a second
+  copy), the `.dmg` on macOS (not the `.zip` that ships beside it for
+  electron-updater), and the `.AppImage`/`.deb` on Linux, each matched to the
+  architecture in the filename. Only a packaged app can replace itself, so a
+  source checkout says so and the route answers 501 rather than downloading an
+  installer for a program it is not running. New `src/core/panelUpdate.mjs`, new
+  `$DSH_PANEL_REPO` and `$DSH_PANEL_DOWNLOAD_DIR`, and a new
+  `src/core/httpGet.mjs` — a dependency-free HTTP GET that honours
+  `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` (Node's global `fetch` ignores them),
+  using `CONNECT` and an inner TLS handshake for HTTPS targets. The client always
+  refuses to follow an HTTPS-to-HTTP redirect downgrade; the stricter "stay on
+  GitHub" rule is passed in by the update path as an `onRedirect` hook, so a
+  caller fetching anything else is not bound by another caller's policy.
 - **DSH version management.** The DSH tab now answers "what am I running, and is
   there an update?" and can install one. The installed version is read with
   `dsh --version` — through the same command the Start button runs, so
@@ -32,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update is reported as a failure with the reason, and a running `dsh web` is
   offered a restart only when the install landed after it booted. New
   `src/core/dshVersion.mjs`, new `$DSH_PANEL_DSH_PACKAGE`, and 28 tests.
+
 
 - **Plugins tab — uninstall only.** A DSH plugin is an npm dependency of a
   *profile*, so the tab reads `$DSH_HOME/profiles/<name>/package.json` and

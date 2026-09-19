@@ -140,6 +140,59 @@ keeping:
   `_resolved` (`/home/runner/work/...` — useless). The field that names the
   registry that answered *you* is `dist.tarball`.
 
+### The panel's own update reads `latest*.yml`, not the GitHub API
+
+`src/core/panelUpdate.mjs` deliberately reads electron-builder's own feed asset
+instead of `api.github.com/repos/.../releases/latest`:
+
+- **The API is rate-limited per IP** — 60/hour unauthenticated, and this repo's
+  own IP was answered `403 API rate limit exceeded` during the session that
+  added the feature. A version check that fails on a busy network is worse than
+  no check.
+- **The feed carries `sha512` and `size` per artifact.** That is what makes a
+  verified download possible, and a verified download is the point: the file
+  ends up being executed by the OS. The API does not expose this for older
+  releases.
+- The three platform feeds are `latest.yml`, `latest-mac.yml` and
+  `latest-linux.yml`, all published by `.github/workflows/release.yml`. They are
+  fetched through `https://github.com/<repo>/releases/latest/download/<name>`,
+  which redirects to `release-assets.githubusercontent.com` — so a redirect
+  allow-list must include `*.githubusercontent.com`, not just `github.com`.
+
+Artifact preference (`pickAsset`) encodes what a person would pick by hand: the
+NSIS `-setup.exe` over the portable build (running the portable opens a *second*
+copy), the `.dmg` over the `.zip` that exists for electron-updater, `.AppImage`
+over `.deb`. The architecture is in every filename except the Windows portable
+build.
+
+### Node's `fetch` ignores the proxy environment
+
+This is why `src/core/httpGet.mjs` exists rather than a few lines of `fetch`.
+`HTTP_PROXY`/`HTTPS_PROXY` have to be honoured for this project's users, and
+undici reads none of them. The client implements the subset that is needed:
+absolute-form requests for plain HTTP through a proxy, `CONNECT` plus an inner
+TLS handshake for HTTPS, `NO_PROXY` matching, and proxy basic auth.
+
+Two rules about redirects, and the split is deliberate:
+
+- **HTTPS → HTTP is refused inside the client**, always. Anyone who can answer
+  for the original host could otherwise strip TLS from a download.
+- **"Stay on GitHub" is the caller's policy**, passed as `onRedirect`. Baking it
+  into the client broke every non-GitHub fetch — including this file's own local
+  test servers. `assertFollowable` is exported for the update path to use.
+
+### Test against local servers, not the network
+
+`test/httpGet.test.mjs` starts real HTTP servers, a real forward proxy and a real
+TLS server on `127.0.0.1` and drives the client through them. That is the only
+way the CONNECT + TLS path gets exercised at all: a test that needed a real proxy
+would be skipped exactly when it matters. The TLS certificate is generated at run
+time with `openssl` and the test **skips honestly** when openssl is absent, rather
+than committing a private key to a public repository.
+
+`test/panelUpdate.test.mjs` feeds the parser the verbatim `latest.yml` of release
+1.2.0 rather than a hand-written approximation of it.
+
 ---
 
 ## 4. Conventions
@@ -250,6 +303,16 @@ restart from a foreground tool call and expect a result.
   rewrite the install tree on Windows while the panel is being **hosted by** the
   `dsh web` it is replacing, and whether the `dsh` shim is recreated in place.
   Both are why the card reports what it re-read instead of trusting the exit code.
+- `POST /api/panel/update`: the **download path is verified end-to-end against
+  the real release** — 111,413,415 bytes of `dsh-control-panel-1.2.0-x64-setup.exe`
+  streamed through the proxy, byte count matching the feed's `size` and the
+  sha512 matching the feed's digest. What remains unverified is everything
+  *after* the file lands: `openPath` has never actually launched an installer,
+  and the "download and install" button only appears in a **packaged** app, so
+  that branch of the route has only been exercised by unit tests.
+- The panel's update check and the DSH version check both run once per page load.
+  Two network round trips per load was judged acceptable (both cached, neither on
+  the `/api/state` poll path), but nobody has measured it on a slow link.
 - `DSH_WEB_CMD` can only be set through the environment; there is no in-app
   field, so a user whose `dsh` is not on PATH can read the hint but not act on it.
 - Plugin uninstall (`src/core/plugins.mjs`) runs the *documented*

@@ -256,6 +256,8 @@ environment; browser mode additionally accepts `--port` and `--host`.
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | Parked MCP blocks |
 | `DSH_PROFILES_DIR` | `$DSH_HOME/profiles` | DSH profiles — each one owns its plugins |
 | `DSH_PANEL_DSH_PACKAGE` | `@deepseek-ai/dsh` | npm package the version card tracks and installs |
+| `DSH_PANEL_REPO` | `YiShan-X/dsh-control-panel` | `owner/repo` the panel's own update check reads |
+| `DSH_PANEL_DOWNLOAD_DIR` | `~/Downloads` | Where an update installer is saved |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch home |
 | `DSH_PANEL_CC_SWITCH` | `1` | Set to `0` to ignore cc-switch entirely |
 | `DSH_WEB_CMD` | `dsh web` | Command the **DSH** tab's Start button runs |
@@ -315,6 +317,39 @@ The same tab answers "what am I running, and is there an update?":
 
 Installs are global and the builds are unsigned, so the panel asks for
 confirmation naming both versions before it touches anything.
+
+### Keeping the panel itself up to date
+
+The **About** tab carries a second, separate card for the panel's own version —
+"is this app current?", which is a different question from "is DSH current?" and
+has a different answer mechanism:
+
+- **The running version** comes from the host (`app.getVersion()` in the desktop
+  app, `package.json` under the CLI), so it can never disagree with what the app
+  reports about itself.
+- **The published version** comes from electron-builder's own `latest*.yml`,
+  fetched as a release asset. Deliberately *not* the GitHub API: that is
+  rate-limited per IP (60 requests/hour unauthenticated), while the asset is
+  served like any other file **and** carries the sha512 and size of every
+  artifact.
+- **Downloads are verified.** The digest is checked before a ~110 MB installer is
+  handed to your OS to run; a mismatch deletes the file instead of leaving it
+  where you might run it. If a release ever publishes without a digest, the panel
+  says the download could not be verified rather than implying it checked.
+- **The artifact is the one you would pick by hand**: the `-setup.exe` on
+  Windows (not the portable build, which would open a second copy), the `.dmg` on
+  macOS (not the `.zip` that exists for electron-updater), the `.AppImage` or
+  `.deb` on Linux — matched to your architecture.
+- **Only an installed app offers the button.** Running from a source checkout,
+  the card says so and the route answers 501, rather than downloading an
+  installer for a program you are not running.
+- **`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` are honoured.** Node's built-in
+  `fetch` ignores them, so the check goes through the panel's own small HTTP
+  client, which uses `CONNECT` and an inner TLS handshake for HTTPS.
+
+The builds are unsigned, so your OS will warn about the developer when the
+installer starts. That is expected for a project without a code-signing
+certificate.
 
 ### The configuration hub is optional
 
