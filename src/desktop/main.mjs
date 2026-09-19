@@ -487,6 +487,10 @@ async function startServer() {
     openPath: (p) => shell.openPath(p),
     dshControl,
     restartHook: () => restartDshWeb(),
+    // Only an installed app has an installation to replace. A dev run
+    // (`npm run desktop`) reports that honestly instead of offering to download
+    // an installer for a program it is not running from.
+    packaged: app.isPackaged,
   });
 
   bound = await listen(server, { host: '127.0.0.1', port: requestedPort });

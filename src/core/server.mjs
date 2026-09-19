@@ -21,6 +21,7 @@ import {
 import { buildMcpState, setMcpEnabled } from './mcp.mjs';
 import { buildPluginState, removePlugin, resolveDshLauncher } from './plugins.mjs';
 import { buildVersionState, updateDsh } from './dshVersion.mjs';
+import { buildPanelUpdateState, downloadPanelUpdate } from './panelUpdate.mjs';
 import { buildSkillState, disableSkill, enableSkill } from './skills.mjs';
 import { log } from './util.mjs';
 
@@ -70,6 +71,9 @@ async function readBody(req) {
  *   it every `/api/dsh/*` route answers 501 and the UI shows the buttons
  *   disabled with a reason -- a host that cannot manage a process must never
  *   pretend it can.
+ * @property {boolean} [packaged]         Whether this host is an installed app.
+ *   Only a packaged host can replace itself, so a source checkout reports that
+ *   instead of offering a download it cannot use.
  */
 
 /** The control bundle a host gets when it wires nothing up. */
@@ -160,6 +164,13 @@ export function createPanelServer(config, options) {
       fresh,
       dshWebStartedAt: dsh.startedAt,
     });
+    // The panel's own version. Like the DSH card, the network half is only
+    // reached when the user asks: `release` is left false here.
+    const panelUpdate = await buildPanelUpdateState(config, {
+      current: version,
+      fresh,
+      packaged: options.packaged === true,
+    });
     const start = startCommandInfo();
     const restartPending = Boolean(
       mcp.patchMtime && dsh.startedAt && new Date(mcp.patchMtime) > new Date(dsh.startedAt),
@@ -205,6 +216,10 @@ export function createPanelServer(config, options) {
       // read, and `checkError` says why the registry could not be reached, so a
       // broken machine is diagnosable from the UI alone.
       dshVersion,
+      // Which panel is running, and whether a newer release exists. Same shape
+      // of report as `dshVersion`: every field is an observation, and the
+      // failure of a check is a value here rather than an exception.
+      panelUpdate,
       dsh: {
         ...dsh,
         canStart: canControlDsh,
@@ -344,6 +359,59 @@ export function createPanelServer(config, options) {
           dshWebStartedAt: dsh.startedAt,
         });
         return sendJson(res, 200, { ok: true, ...result, dshVersion });
+      }
+
+      // Which panel release exists. Off the `/api/state` poll path for the same
+      // reason as the DSH check: the poll must not wait on the network.
+      if (route === 'GET /api/panel/release') {
+        const fresh = url.searchParams.get('fresh') === '1';
+        const panelUpdate = await buildPanelUpdateState(config, {
+          current: version,
+          fresh,
+          release: true,
+          packaged: options.packaged === true,
+        });
+        return sendJson(res, 200, { ok: true, panelUpdate });
+      }
+
+      // Download the newest installer and hand it to the OS.
+      //
+      // Deliberately 501 for a source checkout: there is no installed app to
+      // replace, and downloading an installer for a program the user is not
+      // running would be busywork dressed up as an update. The response says
+      // what to do instead.
+      if (route === 'POST /api/panel/update') {
+        if (options.packaged !== true) {
+          throw new HttpError(
+            501,
+            'this panel is running from a source checkout, so there is no installation to replace; pull the repository and reinstall dependencies instead',
+          );
+        }
+        const result = await downloadPanelUpdate(config, {
+          current: version,
+          packaged: true,
+        });
+        // Opening the file is what actually starts the installer. A host
+        // without `openPath` still gets the download and the path, so the user
+        // can run it -- reported as `launched: false` rather than assumed.
+        let launched = false;
+        let openError = null;
+        if (options.openPath) {
+          openError = await options.openPath(result.file);
+          launched = !openError;
+        }
+        const panelUpdate = await buildPanelUpdateState(config, {
+          current: version,
+          fresh: false,
+          packaged: true,
+        });
+        return sendJson(res, 200, {
+          ok: true,
+          ...result,
+          launched,
+          openError: openError ? String(openError) : null,
+          panelUpdate,
+        });
       }
 
       if (route === 'POST /api/open') {

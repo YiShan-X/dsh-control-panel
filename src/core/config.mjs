@@ -28,6 +28,7 @@ import path from 'node:path';
  * @property {string} settingsFile     DSH settings.yaml (model catalog + default).
  * @property {string} profilesDir      DSH profiles -- each one owns its plugins.
  * @property {string} dshPackage       npm package the version card tracks.
+ * @property {string} panelRepo        `owner/repo` the panel's own updates come from.
  * @property {boolean} ccEnabled
  * @property {string} ccHome
  * @property {string} ccDb
@@ -107,6 +108,10 @@ export function resolveConfig(env = process.env) {
     // mirror publishes under a different name, and the alternative -- editing
     // this file -- is not something a user of a packaged app can do.
     dshPackage: String(env.DSH_PANEL_DSH_PACKAGE || '@deepseek-ai/dsh').trim(),
+    // `owner/repo` whose releases the panel's own update check reads. Separate
+    // from the DSH package above because the two updates are unrelated: one
+    // installs an npm package, the other hands an installer to the OS.
+    panelRepo: String(env.DSH_PANEL_REPO || 'YiShan-X/dsh-control-panel').trim(),
     ccEnabled,
     ccHome,
     ccDb: path.resolve(env.DSH_PANEL_CC_DB || path.join(ccHome, 'cc-switch.db')),

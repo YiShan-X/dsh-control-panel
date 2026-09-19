@@ -23,20 +23,18 @@ import { resolveConfig } from '../src/core/config.mjs';
 import { clearExecutableCache } from '../src/core/dsh.mjs';
 import {
   buildVersionState,
-  compareSemver,
   fetchPublishedVersions,
   findPackageManifest,
   invalidateVersionCache,
-  isNewer,
   isUpdateInFlight,
   needsRestart,
-  parseSemver,
   parseVersionOutput,
   readInstalledVersion,
   registryOrigin,
   resolveUpdateTarget,
   updateDsh,
 } from '../src/core/dshVersion.mjs';
+import { compareSemver, isNewer, parseSemver } from '../src/core/semver.mjs';
 import { HttpError } from '../src/core/errors.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

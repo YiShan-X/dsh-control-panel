@@ -57,6 +57,8 @@ Environment
   DSH_DISABLED_FILE     Parked MCP blocks              (default $DSH_HOME/mcp-manager/disabled.yml)
   DSH_PROFILES_DIR      DSH profiles; each owns its plugins (default $DSH_HOME/profiles)
   DSH_PANEL_DSH_PACKAGE npm package the version card tracks (default @deepseek-ai/dsh)
+  DSH_PANEL_REPO        owner/repo the panel's own update check reads
+  DSH_PANEL_DOWNLOAD_DIR  where an update installer is saved (default ~/Downloads)
   DSH_WEB_CMD           Command used by the DSH tab's Start button (default "dsh web")
   CC_SWITCH_HOME        cc-switch home                 (default ~/.cc-switch)
   DSH_PANEL_CC_SWITCH   set to 0 to ignore cc-switch entirely

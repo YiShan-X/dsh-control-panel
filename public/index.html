@@ -757,6 +757,20 @@
   </section>
 
   <section id="view-about" style="display:none">
+    <div class="card" id="panelUpdateCard">
+      <h2 id="puTitle">Panel version</h2>
+      <div class="ver-head">
+        <span class="ver-num" id="puCurrent">—</span>
+        <span class="ver-badge" id="puBadge"></span>
+      </div>
+      <table class="paths" id="puTable"></table>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
+        <button id="puCheckBtn" class="mini"></button>
+        <button id="puUpdateBtn" class="primary mini" style="display:none"></button>
+      </div>
+      <div class="form-hint" id="puHint" style="margin-top:8px"></div>
+      <pre class="ver-output" id="puOutput" style="display:none"></pre>
+    </div>
     <div class="card">
       <h2 id="aboutRuntime"></h2>
       <table class="paths" id="runtimeTable"></table>
@@ -895,6 +909,31 @@ const I18N = {
     verRestartHint: 'Restart dsh web for the new version to take effect.',
     verRestartNow: 'Restart dsh web now',
     verOutput: 'npm output',
+    puTitle: 'Panel version',
+    puSource: 'Install type',
+    puSourceApp: 'installed app',
+    puSourceCheckout: 'running from a source checkout',
+    puArtifact: 'Artifact',
+    puNoArtifact: (p, a) => `this release publishes no artifact for ${p}/${a}`,
+    puUpToDate: 'up to date',
+    puAvailable: (v) => `update available · ${v}`,
+    puUnknown: 'not checked',
+    puAhead: (v) => `this build is newer than the published release (${v})`,
+    puCheck: 'Check for updates',
+    puChecking: 'Checking…',
+    puNeverChecked: 'The release feed has not been queried yet. It is only contacted when you ask, so the panel never waits on the network to start.',
+    puCheckedAt: (t) => `Checked ${t}`,
+    puCheckError: (m) => `Could not read the release feed: ${m}`,
+    puNotes: 'Release notes',
+    puUpdate: (v) => `Download and install ${v}`,
+    puUpdateBusy: 'Downloading…',
+    puConfirm: (v, c) => `Download DSH Control Panel ${v} (you are running ${c}) and start the installer?\n\nThe download is checked against the digest published in the release feed. The builds are unsigned, so your OS will warn about the developer.`,
+    puDone: (v, m) => `DSH Control Panel ${v} downloaded${m ? ` (${m})` : ''}.`,
+    puLaunched: 'The installer has been started — the panel keeps running until you close it.',
+    puNotLaunched: (p) => `Saved to ${p}, but this host could not start it. Open that file to finish installing.`,
+    puUnverified: 'The release feed published no digest for this file, so the download could not be verified.',
+    puCheckout: 'A source checkout cannot replace itself. Pull the repository and reinstall dependencies instead.',
+    puFailed: (m) => `Update failed: ${m}`,
     skillsBannerTitle: 'Skill changes take effect immediately — no restart.',
     skillsBannerBody: (p) => `DSH's skill provider watches <code>${p}</code>; adding or removing a
       link there is reflected in the catalog on the very next request. Turning one off reclaims its
@@ -1087,6 +1126,31 @@ const I18N = {
     verRestartHint: '重启 dsh web 后新版本才会生效。',
     verRestartNow: '立即重启 dsh web',
     verOutput: 'npm 输出',
+    puTitle: '面板版本',
+    puSource: '安装方式',
+    puSourceApp: '已安装的应用',
+    puSourceCheckout: '从源码运行',
+    puArtifact: '安装包',
+    puNoArtifact: (p, a) => `该版本没有发布 ${p}/${a} 对应的安装包`,
+    puUpToDate: '已是最新',
+    puAvailable: (v) => `有新版本 · ${v}`,
+    puUnknown: '尚未检查',
+    puAhead: (v) => `当前构建比已发布的版本更新（${v}）`,
+    puCheck: '检查更新',
+    puChecking: '检查中…',
+    puNeverChecked: '还没有查询过发布源。只有你主动检查时才会联网，所以面板启动不会被网络拖慢。',
+    puCheckedAt: (t) => `检查时间 ${t}`,
+    puCheckError: (m) => `无法读取发布源：${m}`,
+    puNotes: '更新说明',
+    puUpdate: (v) => `下载并安装 ${v}`,
+    puUpdateBusy: '下载中…',
+    puConfirm: (v, c) => `下载 DSH Control Panel ${v}（当前运行 ${c}）并启动安装程序？\n\n下载内容会按发布源里公布的摘要校验。构建包未签名，系统会提示未知开发者。`,
+    puDone: (v, m) => `DSH Control Panel ${v} 已下载${m ? `（${m}）` : ''}。`,
+    puLaunched: '安装程序已启动——在你关闭之前面板会继续运行。',
+    puNotLaunched: (p) => `已保存到 ${p}，但当前宿主无法启动它。打开该文件即可完成安装。`,
+    puUnverified: '发布源没有为这个文件提供摘要，因此无法校验下载内容。',
+    puCheckout: '从源码运行的面板无法自我替换。请拉取仓库并重新安装依赖。',
+    puFailed: (m) => `更新失败：${m}`,
     skillsBannerTitle: 'Skills 改动立即生效，无需重启。',
     skillsBannerBody: (p) => `DSH 的 skill provider 会监听 <code>${p}</code>，加/删软链接即刻反映到 catalog；
       关掉一个 skill 就省掉它每个请求的描述开销。`,
@@ -1243,6 +1307,8 @@ const state = {
   // Which DSH is installed and what is published. Empty until the first fetch,
   // which `renderVersion` renders as "not checked" rather than as "up to date".
   dshVersion: {},
+  // The same for the panel's own version, filled from the About tab's check.
+  panelUpdate: {},
 };
 let tab = 'skills';
 let timer = null;
@@ -1254,6 +1320,11 @@ let versionAutoChecked = false;
 let versionChecking = false;
 /** Kept so the npm output of the last install survives a re-render. */
 let versionOutput = '';
+/** The same three flags for the panel's own update, which is a separate action. */
+let panelChecking = false;
+let panelAutoChecked = false;
+let panelUpdating = false;
+let panelOutput = '';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1362,6 +1433,13 @@ async function load(showSpinner, force) {
       versionAutoChecked = true;
       checkForUpdates(false).catch(() => {});
     }
+    // The same one-shot for the panel's own release feed. They are separate
+    // questions ("is DSH current?" and "is this app current?") with separate
+    // sources, so a failure of one must not suppress the other.
+    if (!panelAutoChecked) {
+      panelAutoChecked = true;
+      checkPanelUpdate(false).catch(() => {});
+    }
   } catch (err) {
     toast(t('loadFailed', err.message));
   } finally {
@@ -1406,6 +1484,7 @@ function render() {
   renderPlugins();
   renderDsh();
   renderVersion();
+  renderPanelUpdate();
   renderAbout();
 
   $('#foot').innerHTML = `
@@ -1883,6 +1962,86 @@ function renderVersion() {
   $('#verRestartBtn').textContent = t('verRestartNow');
 }
 
+/**
+ * The panel's own version card, in the About tab.
+ *
+ * Same honesty rules as the DSH card: "not checked" is its own state, a failed
+ * check is reported rather than swallowed, and the install type is stated
+ * because a source checkout cannot replace itself -- the card must not offer a
+ * button the server will answer 501 for.
+ */
+function renderPanelUpdate() {
+  const u = state.panelUpdate || {};
+  $('#puTitle').textContent = t('puTitle');
+  $('#puCurrent').textContent = u.current || '—';
+
+  const badge = $('#puBadge');
+  if (u.checkError) {
+    badge.className = 'ver-badge err';
+    badge.textContent = t('puUnknown');
+  } else if (!u.checked) {
+    badge.className = 'ver-badge';
+    badge.textContent = t('puUnknown');
+  } else if (u.updateAvailable) {
+    badge.className = 'ver-badge warn';
+    badge.textContent = t('puAvailable', u.latest);
+  } else if (u.aheadOfRelease) {
+    badge.className = 'ver-badge';
+    badge.textContent = t('puAhead', u.latest);
+  } else {
+    badge.className = 'ver-badge on';
+    badge.textContent = t('puUpToDate');
+  }
+
+  const rows = [];
+  rows.push(`<tr><td>${esc(t('puSource'))}</td>
+    <td>${esc(u.packaged ? t('puSourceApp') : t('puSourceCheckout'))}</td></tr>`);
+
+  if (u.updateAvailable && u.asset) {
+    const size = u.asset.size ? ` · ${esc(fmtBytes(u.asset.size))}` : '';
+    rows.push(`<tr><td>${esc(t('puArtifact'))}</td>
+      <td><code>${esc(u.asset.name)}</code><div class="form-hint">${esc(u.asset.kind)}${size}</div></td></tr>`);
+  } else if (u.checked && !u.checkError && u.latest && !u.asset) {
+    rows.push(`<tr><td>${esc(t('puArtifact'))}</td>
+      <td class="form-hint">${esc(t('puNoArtifact', state.platform || '', u.arch || ''))}</td></tr>`);
+  }
+
+  if (u.repo) {
+    rows.push(`<tr><td>${esc(t('puNotes'))}</td>
+      <td><a href="${esc(u.releaseUrl)}" target="_blank" rel="noopener">${esc(u.repo)}</a>
+      ${u.releaseDate ? `<div class="form-hint">${esc(fmtTime(u.releaseDate))}</div>` : ''}</td></tr>`);
+  }
+  $('#puTable').innerHTML = rows.join('');
+
+  const check = $('#puCheckBtn');
+  check.textContent = panelChecking ? t('puChecking') : t('puCheck');
+  check.disabled = panelChecking || panelUpdating;
+
+  const update = $('#puUpdateBtn');
+  update.style.display = u.canUpdate ? '' : 'none';
+  update.disabled = panelUpdating;
+  update.textContent = panelUpdating ? t('puUpdateBusy') : t('puUpdate', u.latest || '');
+
+  const hint = $('#puHint');
+  if (panelUpdating) {
+    hint.textContent = t('puUpdateBusy');
+  } else if (!u.packaged) {
+    // The install type outranks everything else here: it explains why there is
+    // no update button at all.
+    hint.textContent = t('puCheckout');
+  } else if (u.checkError) {
+    hint.innerHTML = `<span class="warn">${esc(t('puCheckError', u.checkError))}</span>`;
+  } else if (!u.checked) {
+    hint.textContent = t('puNeverChecked');
+  } else {
+    hint.textContent = t('puCheckedAt', fmtTime(u.checkedAt));
+  }
+
+  const out = $('#puOutput');
+  out.style.display = panelOutput ? '' : 'none';
+  out.textContent = panelOutput;
+}
+
 function pathRow(label, value, target, keepFull) {
   const shown = value ? (keepFull ? value : short(value)) : t('notConfigured');
   const btn = value && target
@@ -2173,6 +2332,56 @@ $('#verCheckBtn').addEventListener('click', () => checkForUpdates(true));
 $('#verRestartBtn').addEventListener('click', () => {
   if (confirm(t('dshRestartConfirm'))) dshAction('restart');
 });
+
+// Panel self-update.
+//
+// Two different actions behind two different buttons, because they cost very
+// different things: checking is a small fetch, updating downloads a ~110 MB
+// installer. The update is behind a confirm() that names both versions, and the
+// server refuses it outright on a source checkout.
+async function checkPanelUpdate(fresh) {
+  if (panelUpdating) return;
+  panelChecking = true;
+  renderPanelUpdate();
+  try {
+    const r = await api(`/api/panel/release${fresh ? '?fresh=1' : ''}`);
+    if (r.panelUpdate) state.panelUpdate = r.panelUpdate;
+  } catch (err) {
+    toast(t('puFailed', err.message));
+  } finally {
+    panelChecking = false;
+    renderPanelUpdate();
+  }
+}
+
+async function runPanelUpdate() {
+  const u = state.panelUpdate || {};
+  if (panelUpdating || !u.canUpdate) return;
+  if (!confirm(t('puConfirm', u.latest, u.current))) return;
+
+  panelUpdating = true;
+  panelOutput = '';
+  renderPanelUpdate();
+  try {
+    const r = await api('/api/panel/update', {});
+    if (r.panelUpdate) state.panelUpdate = r.panelUpdate;
+    panelOutput = [r.file, r.size ? fmtBytes(r.size) : null].filter(Boolean).join('  ·  ');
+
+    if (r.verified === null) toast(t('puUnverified'));
+    toast(t('puDone', r.version, r.size ? fmtBytes(r.size) : ''));
+    // `launched` is what was observed, not what was attempted: a host without an
+    // opener still downloaded the file, and the path is the actionable part.
+    toast(r.launched ? t('puLaunched') : t('puNotLaunched', r.file));
+  } catch (err) {
+    toast(t('puFailed', err.message));
+  } finally {
+    panelUpdating = false;
+    renderPanelUpdate();
+  }
+}
+
+$('#puCheckBtn').addEventListener('click', () => checkPanelUpdate(true));
+$('#puUpdateBtn').addEventListener('click', () => runPanelUpdate());
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-update]');
   if (!btn || btn.disabled) return;
