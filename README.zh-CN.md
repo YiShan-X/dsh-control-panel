@@ -145,6 +145,17 @@ Windows 上也可以直接双击 `start.cmd`：已构建桌面版时启动桌面
 - 在 Windows 上自动把 `npx` / `uvx` 这类 shell shim 包进 `cmd /c`——libuv
   无法直接 spawn `.cmd`
 
+**插件标签页 —— 只做卸载**
+
+- 把每个 DSH profile 的插件列在一起：磁盘上真实的版本、它是不是 profile 层、
+  有没有带 GUI 页面
+- 内置层（`dsh-base`、`dsh-web-app`）也会列出来并标注「不可卸载」，这样能解释清楚
+  为什么可卸载的条目比 DSH 里看到的 roster 少
+- 卸载执行 `dsh plugin --profile <name> remove <pkg>`——也就是你手动会敲的那条命令，
+  因此 `pnpm-lock.yaml` 不会和 manifest 脱节。运行中的 `dsh web` 要重启后才会真正
+  卸掉它，标签页会直说这一点，而不是假装已经生效
+- **不提供安装**，安装请用 `dsh plugin add`
+
 **它还会主动告诉你那些你根本看不见的问题。** 最常见的一种：`SKILL.md` 没有
 frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢弃**——
 只在日志里留一条 warning，模型侧完全看不出来。你以为能用，其实一直没生效。
@@ -175,7 +186,11 @@ frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢
    里的块**原样搬回**；只有 DSH 从来没有过这个块时，才去问配置中枢。
 5. **只打开白名单里的位置。** `/api/open` 只接受固定的键，不接受调用方传入的路径，
    免得一个无关网页借用本地服务去启动别的东西。
-6. **只监听回环地址。** 默认 `127.0.0.1`；桌面版用系统分配的端口，永不与别的东西冲突。
+6. **装不了东西。** 插件卸载只执行官方那条 `dsh plugin ... remove`，别的一概不做；
+   `/api/plugins/remove` 只接受「已经是该 profile 依赖」的包名。一个无关网页因此没法把
+   本地面板变成「随便拿个 spec 去跑 pnpm」的入口。**「已卸载」只在重新读取 profile、
+   确认依赖真的消失之后才会报**——pnpm 退出码为 0 但什么都没改，会被如实报成失败。
+7. **只监听回环地址。** 默认 `127.0.0.1`；桌面版用系统分配的端口，永不与别的东西冲突。
 
 ---
 
@@ -190,14 +205,41 @@ frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢
 | `DSH_SKILL_POOL` | 见下 | 用 `${path.delimiter}` 分隔的 skill 池列表 |
 | `DSH_PATCH_FILE` | `$DSH_HOME/cordis.patch.yml` | 启用的 MCP 块 |
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | 停用的 MCP 块 |
+| `DSH_PROFILES_DIR` | `$DSH_HOME/profiles` | DSH 配置档目录——插件按配置档安装 |
+| `DSH_PANEL_DSH_PACKAGE` | `@deepseek-ai/dsh` | 版本卡片跟踪并安装的 npm 包 |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch 目录 |
 | `DSH_PANEL_CC_SWITCH` | `1` | 设为 `0` 可完全忽略 cc-switch |
+| `DSH_WEB_CMD` | `dsh web` | **DSH** 标签页「启动」按钮执行的命令 |
+| `DSH_PANEL_NO_CONTROL` | `0` | 设为 `1` 可禁用 `dsh web` 的启停/重启 |
+| `DSH_PANEL_PROBE_WEB` | `1` | 设为 `0` 可停止探测运行中的 `dsh web` |
 | `DSH_PANEL_PORT` | `8791` | 浏览器模式端口（桌面模式自动选空闲端口） |
 | `DSH_PANEL_HOST` | `127.0.0.1` | 浏览器模式监听地址 |
 | `DSH_PANEL_POLL_MS` | `30000` | UI 自动刷新间隔 |
 
 未设置 `DSH_SKILL_POOL` 时，skill 池依次为 cc-switch 的池（`~/.cc-switch/skills`）
 和 `$DSH_HOME/skill-pool`。
+
+### 装了哪个 DSH，有没有新版本
+
+**DSH** 标签页同时回答「我在跑哪个版本、有没有更新」：
+
+- **已安装版本**来自 `dsh --version`，走的是「启动」按钮用的同一个命令，所以
+  `DSH_WEB_CMD` 不会让面板报出另一个安装的版本。这条命令跑不起来时，面板回退去读
+  已安装的 `package.json`，并明确说明版本是哪一个来源读出来的。
+- **线上版本**来自 `npm view <包名> --json`，用的是**你自己的 npm**。这是刻意的：
+  你的 `.npmrc`、镜像源、`HTTP_PROXY` / `HTTPS_PROXY` 全部生效，面板给出的版本
+  天然就是安装会真正拉到的那个版本。卡片会显示是哪个 registry 回答的。
+- **只有你主动检查时才联网**——每次打开页面一次，加上「检查更新」按钮。
+  `/api/state` 从不等待网络，所以 registry 不可达不会让整个面板卡住，失败会写在卡片里。
+- **所有 dist-tag 都列出**（`latest`、`next`、`alpha`），带版本号和发布时间，可以在
+  通道之间双向切换。低于已安装版本的通道会标成「较早」，而不是当成更新来推荐。
+- **更新执行 `npm install -g <包名>@<版本>`，然后重新读一次版本号。** npm 退出码为 0
+  不算成功：如果 `PATH` 里的 `dsh` 仍然报旧版本（多半是 PATH 里还有另一个更靠前的安装），
+  面板会直接说出来，而不是声称更新成功。
+- **运行中的 `dsh web` 仍然用着启动时加载的代码**，所以只要安装在服务启动之后落地，
+  卡片就会给出重启入口。
+
+安装是全局的、构建包未签名，因此面板会先弹确认框并把新旧两个版本号都写清楚。
 
 ### 配置中枢是可选的
 

@@ -119,6 +119,9 @@
   }
   .chip b { color: var(--fg); font-weight: 600; }
   .chip.on b { color: var(--on); }
+  /* A pending DSH update is a "you may want to act" chip, not a healthy one. */
+  .chip.warn { border-color: var(--warn); }
+  .chip.warn b { color: var(--warn); }
   button {
     font: inherit; color: var(--fg); background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px;
@@ -200,6 +203,18 @@
   .right { text-align: right; color: var(--fg-faint); font-size: 12px; white-space: nowrap; padding-top: 2px; }
   .right .tk { font-family: var(--mono); color: var(--fg-dim); }
   .empty { color: var(--fg-faint); padding: 30px; text-align: center; }
+
+  /* Plugins tab: the same row shell as skills/MCP, minus the switch column --
+     a plugin is installed or it is not, there is no in-between state to toggle. */
+  .row.prow { grid-template-columns: 1fr auto; }
+  .pgroup {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin: 16px 2px 2px; font-size: 12px; color: var(--fg-faint);
+  }
+  .pgroup:first-child { margin-top: 0; }
+  .pgroup code { font-family: var(--mono); color: var(--fg-dim); }
+  button.danger { border-color: var(--tag-bad-line); color: var(--tag-bad-fg); }
+  button.danger:hover:not(:disabled) { background: var(--tag-bad-bg); }
   footer { color: var(--fg-faint); font-size: 11.5px; margin-top: 26px; line-height: 1.9; }
   footer code { font-family: var(--mono); color: var(--fg-dim); }
   .toast {
@@ -286,6 +301,26 @@
   .status-dot.on { background: var(--on); box-shadow: 0 0 0 3px rgba(53, 192, 122, 0.15); }
   .status-dot.warn { background: var(--warn); }
   .status-dot.err { background: var(--err); }
+
+  /* Version card. The installed version is the headline and the badge is the
+     one fact the user opened the tab for ("can I update?"), so both are larger
+     than the surrounding detail rather than one more row in a table. */
+  .ver-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .ver-num { font-family: var(--mono); font-size: 20px; font-weight: 600; }
+  .ver-badge {
+    font-size: 11.5px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--fg-dim); white-space: nowrap;
+  }
+  .ver-badge.on { border-color: var(--on); color: var(--on); }
+  .ver-badge.warn { border-color: var(--warn); color: var(--warn); }
+  .ver-badge.err { border-color: var(--err); color: var(--err); }
+  .ver-output {
+    margin: 10px 0 0; max-height: 220px; overflow: auto; white-space: pre-wrap;
+    font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px;
+  }
+  .ver-older { color: var(--fg-faint); font-size: 11.5px; }
 
   /* Empty state inside a card body. */
   .empty-card {
@@ -604,6 +639,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="skills">Skills <span class="n" id="nSkills"></span></button>
     <button class="tab" data-tab="mcp">MCP <span class="n" id="nMcp"></span></button>
+    <button class="tab" data-tab="plugins"><span id="tabPlugins"></span> <span class="n" id="nPlugins"></span></button>
     <button class="tab" data-tab="dsh" id="tabDsh">DSH</button>
     <button class="tab" data-tab="about" id="tabAbout"></button>
   </div>
@@ -677,6 +713,21 @@
       <div class="form-hint warn" id="dshControlWarn" style="margin-top:4px"></div>
     </div>
 
+    <div class="card" id="verCard">
+      <h2 id="verTitle">DSH 版本</h2>
+      <div class="ver-head">
+        <span class="ver-num" id="verInstalled">—</span>
+        <span class="ver-badge" id="verBadge"></span>
+      </div>
+      <table class="paths" id="verTable"></table>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
+        <button id="verCheckBtn" class="mini"></button>
+        <button id="verRestartBtn" class="primary mini" style="display:none"></button>
+      </div>
+      <div class="form-hint" id="verHint" style="margin-top:8px"></div>
+      <pre class="ver-output" id="verOutput" style="display:none"></pre>
+    </div>
+
     <div class="card" id="dshErrorCard" style="display:none">
       <h2 id="dshErrorTitle">最近错误</h2>
       <pre id="dshLastError" style="margin:0; white-space:pre-wrap; font-size:12.5px"></pre>
@@ -692,6 +743,17 @@
       <h2 id="dshRuntimeTitle">运行时</h2>
       <table class="paths" id="dshRuntimeTable"></table>
     </div>
+  </section>
+
+  <section id="view-plugins" style="display:none">
+    <div class="banner info">
+      <span>🧩</span>
+      <div id="pluginsBanner"></div>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="qp" />
+    </div>
+    <div class="list" id="pluginList"></div>
   </section>
 
   <section id="view-about" style="display:none">
@@ -726,9 +788,34 @@ const I18N = {
     subtitle: 'Skills & MCP — switch off what you are not using',
     refresh: 'Refresh', refreshBusy: 'Loading…',
     themeToLight: 'Switch to light theme', themeToDark: 'Switch to dark theme',
-    tabSkills: 'Skills', tabMcp: 'MCP', tabModels: 'Models', tabAbout: 'About',
+    tabSkills: 'Skills', tabMcp: 'MCP', tabModels: 'Models', tabPlugins: 'Plugins', tabAbout: 'About',
     skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} on · ~<b>${t}</b> tok/request`,
     mcpChip: (a, b) => `MCP <b>${a}</b>/${b} on`,
+    pluginsChip: (n) => `Plugins <b>${n}</b>`,
+    pluginsBannerTitle: 'Uninstall only — installing is not offered here.',
+    pluginsBannerBody: (p) => `A DSH plugin is an npm dependency of a profile (<code>${p}</code>).
+      Uninstalling runs <code>dsh plugin --profile &lt;name&gt; remove &lt;pkg&gt;</code> — the same command you would
+      type by hand — so no lockfile is left out of sync. A running <code>dsh web</code> keeps the plugin loaded until
+      it restarts.`,
+    pluginRestartTitle: 'A plugin changed, but the running <code>dsh web</code> has not restarted yet.',
+    pluginRestartBody: (a, b) => `Profile manifest last modified ${a} · dsh web started ${b}.<br>
+      Restart <code>dsh web</code> from the DSH tab to apply it.`,
+    searchPlugins: 'Search plugins…',
+    noPlugins: 'No plugins found',
+    noPluginProfile: 'No DSH profile with a package.json was found.',
+    plProfile: 'Profile',
+    plLayer: 'profile layer',
+    plPlain: 'dependency · not a layer',
+    plInBox: 'in-box layer · cannot be uninstalled',
+    plClient: 'adds a GUI page',
+    plMissing: 'declared, not on disk',
+    plUninstall: 'Uninstall',
+    plRemoving: 'Removing…',
+    plNoLauncher: 'dsh was not found on PATH, so nothing can be uninstalled from here. Point DSH_WEB_CMD at the launcher if DSH lives elsewhere.',
+    plConfirm: (profile, name) => `Uninstall ${name} from the "${profile}" profile?\n\nThis runs pnpm inside the profile directory. It cannot be undone from this panel.`,
+    plDone: (name) => `${name} uninstalled.`,
+    plRestartHint: 'Restart dsh web on the DSH tab for it to take effect.',
+    plFailed: (m) => `Uninstall failed: ${m}`,
     dshPageTitle: 'DSH service',
     dshPageHint: 'Control the dsh web process. Skills and MCP changes can be applied by restarting it from here.',
     dshStartBtn: 'Start dsh web',
@@ -774,6 +861,39 @@ const I18N = {
     dshUptimeSeconds: (s) => `${s}s`,
     dshProbeMs: (n) => `Process probe took ${n} ms (cached up to 15 s).`,
     dshCpu: (n) => `CPU ${n}`,
+    verTitle: 'DSH version',
+    verPackage: 'Package',
+    verInstalled: 'Installed',
+    verNotDetected: 'not detected',
+    verUpToDate: 'up to date',
+    verAvailable: (v) => `update available · ${v}`,
+    verUnknown: 'not checked',
+    verCheck: 'Check for updates',
+    verChecking: 'Checking…',
+    verNeverChecked: 'The registry has not been queried yet. It is only contacted when you ask, so the panel never waits on the network to start.',
+    verCheckedAt: (t, r) => `Checked ${t}${r ? ` · answered by <code>${r}</code>` : ''}`,
+    verSourceDsh: (c) => `read from <code>${c}</code>`,
+    verSourceManifest: 'read from the installed package.json',
+    verSourceMissing: 'no DSH installation was found',
+    verCheckError: (m) => `Could not reach the registry: ${m}`,
+    verNoNpm: 'npm was not found on PATH, so the registry cannot be queried and no version can be installed from here.',
+    verChannel: 'Channel',
+    verVersion: 'Version',
+    verPublished: 'Published',
+    verCurrent: 'current',
+    verUpdateTo: (v) => `Update to ${v}`,
+    verSwitchTo: (v) => `Switch to ${v}`,
+    verDowngrade: 'older',
+    verConfirm: (a, b) => `Install DSH ${a} over ${b}?\n\nThis runs a global npm install and rewrites the DSH installation every profile shares. A running dsh web keeps the code it started with until it is restarted.`,
+    verConfirmReinstall: (a) => `Reinstall DSH ${a}?\n\nThis runs a global npm install.`,
+    verWorking: (v) => `Installing ${v}… this can take a minute.`,
+    verDone: (a, b) => `DSH updated ${a} → ${b}.`,
+    verAlreadyThere: (v) => `DSH ${v} was already installed; nothing changed.`,
+    verFailed: (m) => `Update failed: ${m}`,
+    verNotReached: (t, o) => `npm reported success, but the dsh on PATH still reports ${o} instead of ${t}. Another installation is probably earlier on PATH.`,
+    verRestartHint: 'Restart dsh web for the new version to take effect.',
+    verRestartNow: 'Restart dsh web now',
+    verOutput: 'npm output',
     skillsBannerTitle: 'Skill changes take effect immediately — no restart.',
     skillsBannerBody: (p) => `DSH's skill provider watches <code>${p}</code>; adding or removing a
       link there is reflected in the catalog on the very next request. Turning one off reclaims its
@@ -860,9 +980,33 @@ const I18N = {
     subtitle: 'Skills 与 MCP · 按需开关',
     refresh: '刷新', refreshBusy: '加载中…',
     themeToLight: '切换到浅色主题', themeToDark: '切换到深色主题',
-    tabSkills: 'Skills', tabMcp: 'MCP', tabModels: '模型', tabAbout: '关于',
+    tabSkills: 'Skills', tabMcp: 'MCP', tabModels: '模型', tabPlugins: '插件', tabAbout: '关于',
     skillsChip: (a, b, t) => `Skills <b>${a}</b>/${b} 开 · ~<b>${t}</b> tok/请求`,
     mcpChip: (a, b) => `MCP <b>${a}</b>/${b} 开`,
+    pluginsChip: (n) => `插件 <b>${n}</b>`,
+    pluginsBannerTitle: '这里只做卸载，不提供安装。',
+    pluginsBannerBody: (p) => `DSH 插件是某个 profile 的 npm 依赖（<code>${p}</code>）。
+      卸载执行的是 <code>dsh plugin --profile &lt;name&gt; remove &lt;pkg&gt;</code>，也就是你手动会敲的那条命令，
+      因此不会留下与实际依赖不一致的 lockfile。运行中的 <code>dsh web</code> 要重启后才会真正卸载掉它。`,
+    pluginRestartTitle: '插件已变更，但运行中的 <code>dsh web</code> 还没重启，改动尚未生效。',
+    pluginRestartBody: (a, b) => `profile 清单最后修改：${a} · dsh web 启动：${b}<br>
+      请到 DSH 标签页重启 <code>dsh web</code> 使其生效。`,
+    searchPlugins: '搜索插件…',
+    noPlugins: '没有匹配的插件',
+    noPluginProfile: '没有找到带 package.json 的 DSH profile。',
+    plProfile: '配置档',
+    plLayer: 'profile 层',
+    plPlain: '依赖 · 未加入层',
+    plInBox: '内置层 · 不可卸载',
+    plClient: '带 GUI 页面',
+    plMissing: '已声明但磁盘上没有',
+    plUninstall: '卸载',
+    plRemoving: '卸载中…',
+    plNoLauncher: 'PATH 上找不到 dsh，因此这里无法执行卸载。如果 DSH 装在别处，请把 DSH_WEB_CMD 指向它的启动器。',
+    plConfirm: (profile, name) => `确定要把 ${name} 从 "${profile}" 配置档卸载吗？\n\n这会在该 profile 目录里执行 pnpm，且无法从本面板恢复。`,
+    plDone: (name) => `${name} 已卸载。`,
+    plRestartHint: '请到 DSH 标签页重启 dsh web 使其生效。',
+    plFailed: (m) => `卸载失败：${m}`,
     dshPageTitle: 'DSH 服务',
     dshPageHint: 'DSH web 进程控制。Skills / MCP 改完可以在这里重启它来生效。',
     dshStartBtn: '启动 dsh web',
@@ -908,6 +1052,39 @@ const I18N = {
     dshUptimeSeconds: (s) => `${s} 秒`,
     dshProbeMs: (n) => `进程探测耗时 ${n} ms（进程信息最多缓存 15 秒）。`,
     dshCpu: (n) => `CPU ${n}`,
+    verTitle: 'DSH 版本',
+    verPackage: 'npm 包',
+    verInstalled: '已安装',
+    verNotDetected: '未检测到',
+    verUpToDate: '已是最新',
+    verAvailable: (v) => `有新版本 · ${v}`,
+    verUnknown: '尚未检查',
+    verCheck: '检查更新',
+    verChecking: '检查中…',
+    verNeverChecked: '还没有查询过 registry。只有你主动检查时才会联网，所以面板启动不会被网络拖慢。',
+    verCheckedAt: (t, r) => `检查时间 ${t}${r ? ` · 数据来自 <code>${r}</code>` : ''}`,
+    verSourceDsh: (c) => `读取自 <code>${c}</code>`,
+    verSourceManifest: '读取自已安装的 package.json',
+    verSourceMissing: '没有找到 DSH 安装',
+    verCheckError: (m) => `无法访问 registry：${m}`,
+    verNoNpm: 'PATH 里找不到 npm，因此无法查询 registry，也无法从这里安装任何版本。',
+    verChannel: '通道',
+    verVersion: '版本',
+    verPublished: '发布时间',
+    verCurrent: '当前',
+    verUpdateTo: (v) => `更新到 ${v}`,
+    verSwitchTo: (v) => `切换到 ${v}`,
+    verDowngrade: '较早',
+    verConfirm: (a, b) => `把 DSH 从 ${b} 安装为 ${a}？\n\n这会执行一次全局 npm 安装，覆盖所有 profile 共用的那份 DSH。正在运行的 dsh web 会继续使用启动时加载的代码，需要重启才会生效。`,
+    verConfirmReinstall: (a) => `重新安装 DSH ${a}？\n\n这会执行一次全局 npm 安装。`,
+    verWorking: (v) => `正在安装 ${v}… 可能需要一分钟。`,
+    verDone: (a, b) => `DSH 已更新：${a} → ${b}。`,
+    verAlreadyThere: (v) => `DSH ${v} 本来就是已安装版本，没有变化。`,
+    verFailed: (m) => `更新失败：${m}`,
+    verNotReached: (t, o) => `npm 报告成功，但 PATH 里的 dsh 仍然报告 ${o} 而不是 ${t}。多半是 PATH 里还有另一个更靠前的安装。`,
+    verRestartHint: '重启 dsh web 后新版本才会生效。',
+    verRestartNow: '立即重启 dsh web',
+    verOutput: 'npm 输出',
     skillsBannerTitle: 'Skills 改动立即生效，无需重启。',
     skillsBannerBody: (p) => `DSH 的 skill provider 会监听 <code>${p}</code>，加/删软链接即刻反映到 catalog；
       关掉一个 skill 就省掉它每个请求的描述开销。`,
@@ -1058,9 +1235,23 @@ window.matchMedia?.('(prefers-color-scheme: light)').addEventListener?.('change'
 // State + helpers
 // ---------------------------------------------------------------------------
 const $ = (s) => document.querySelector(s);
-const state = { skills: [], mcp: [], skillSummary: {}, mcpMeta: {}, paths: {}, ccSwitch: {}, pools: [] };
+const state = {
+  skills: [], mcp: [], skillSummary: {}, mcpMeta: {}, paths: {}, ccSwitch: {}, pools: [],
+  plugins: [], pluginProfiles: [], pluginsMeta: {},
+  // Which DSH is installed and what is published. Empty until the first fetch,
+  // which `renderVersion` renders as "not checked" rather than as "up to date".
+  dshVersion: {},
+};
 let tab = 'skills';
 let timer = null;
+/** Set while an update install is running, so the buttons cannot be re-clicked. */
+let versionUpdating = false;
+/** One registry check per page load, and never on the poll path. */
+let versionAutoChecked = false;
+/** Set while a registry check is in flight, so a poll cannot un-disable it. */
+let versionChecking = false;
+/** Kept so the npm output of the last install survives a re-render. */
+let versionOutput = '';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1161,6 +1352,14 @@ async function load(showSpinner, force) {
     render();
     if (timer) clearInterval(timer);
     timer = setInterval(() => load(false), Math.max(5000, state.pollMs || 30000));
+    // Ask the registry once per page load. Deliberately after the first paint
+    // and deliberately not awaited: the version card is useful the moment the
+    // local `dsh --version` lands, and a slow or unreachable registry must not
+    // hold up the rest of the panel.
+    if (!versionAutoChecked) {
+      versionAutoChecked = true;
+      checkForUpdates(false).catch(() => {});
+    }
   } catch (err) {
     toast(t('loadFailed', err.message));
   } finally {
@@ -1176,7 +1375,9 @@ function render() {
   $('#i18nTitle').textContent = t('title');
   $('#i18nSubtitle').textContent = t('subtitle');
   $('#lang').textContent = lang === 'zh-CN' ? 'EN' : '中';
+  $('#tabPlugins').textContent = t('tabPlugins');
   $('#tabAbout').textContent = t('tabAbout');
+  $('#qp').placeholder = t('searchPlugins');
   $('#skillsBanner').innerHTML = `<b>${t('skillsBannerTitle')}</b> ${t('skillsBannerBody', esc(short(state.paths.dshSkills)))}`;
   $('#mcpBanner').innerHTML = `<b>${t('mcpBannerTitle')}</b> ${t('mcpBannerBody')}`;
   $('#q').placeholder = t('searchSkills');
@@ -1188,17 +1389,21 @@ function render() {
 
   const s = state.skillSummary || {};
   const mcpOn = state.mcp.filter((m) => m.enabled).length;
+  // Only third-party plugins count: the in-box layers cannot be removed, so
+  // counting them would promise a number the tab cannot act on.
+  const pluginCount = (state.plugins || []).filter((p) => p.removable).length;
 
-  $('#chips').innerHTML = `
-    <span class="chip on">${t('skillsChip', s.enabled ?? 0, s.total ?? 0, num(s.enabledTokens ?? 0))}</span>
-    <span class="chip on">${t('mcpChip', mcpOn, state.mcp.length)}</span>`;
+  renderChips();
   $('#nSkills').textContent = `${s.enabled ?? 0}/${s.total ?? 0}`;
   $('#nMcp').textContent = `${mcpOn}/${state.mcp.length}`;
+  $('#nPlugins').textContent = String(pluginCount);
 
   renderBanners();
   renderSkills();
   renderMcp();
+  renderPlugins();
   renderDsh();
+  renderVersion();
   renderAbout();
 
   $('#foot').innerHTML = `
@@ -1206,6 +1411,40 @@ function render() {
     <div>${t('footSkillRoot', esc(short(state.paths.dshSkills)))}</div>
     <div>${t('footPatch', esc(short(state.mcpMeta?.files?.patch)))}</div>
     <div>${t('sourceTokens')} · <a href="${REPO}" target="_blank" rel="noopener">${t('project')}</a></div>`;
+}
+
+/**
+ * The header chips.
+ *
+ * Split out of `render` because the version card changes them on its own: the
+ * update check lands after the first paint, and re-running the whole `render`
+ * just to move one chip would rebuild every list on screen. Without this the
+ * chip keeps advertising the version it saw before the check until the next
+ * poll comes round.
+ */
+function renderChips() {
+  const s = state.skillSummary || {};
+  const mcpOn = state.mcp.filter((m) => m.enabled).length;
+  // Only third-party plugins count: the in-box layers cannot be removed, so
+  // counting them would promise a number the tab cannot act on.
+  const pluginCount = (state.plugins || []).filter((p) => p.removable).length;
+  $('#chips').innerHTML = `
+    <span class="chip on">${t('skillsChip', s.enabled ?? 0, s.total ?? 0, num(s.enabledTokens ?? 0))}</span>
+    <span class="chip on">${t('mcpChip', mcpOn, state.mcp.length)}</span>
+    <span class="chip">${t('pluginsChip', pluginCount)}</span>
+    ${versionChip()}`;
+}
+
+/**
+ * The DSH version, as a header chip, so "there is an update" is visible from
+ * every tab instead of only the one that happens to hold the version card.
+ * Renders nothing at all until a version has actually been read.
+ */
+function versionChip() {
+  const v = state.dshVersion || {};
+  if (!v.installed) return '';
+  const arrow = v.updateAvailable ? ` <b>→ ${esc(v.newest.version)}</b>` : '';
+  return `<span class="chip ${v.updateAvailable ? 'warn' : ''}">DSH <b>${esc(v.installed)}</b>${arrow}</span>`;
 }
 
 function renderBanners() {
@@ -1350,6 +1589,77 @@ function renderMcp() {
 }
 
 /**
+ * Render the Plugins tab: every profile's plugins, grouped by profile.
+ *
+ * The in-box layers are listed too. They cannot be removed, and a row that
+ * says so is what explains why the removable list is shorter than the roster
+ * the user sees inside DSH itself.
+ */
+function renderPlugins() {
+  const meta = state.pluginsMeta || {};
+  const rows = state.plugins || [];
+  const profiles = state.pluginProfiles || [];
+
+  $('#pluginsBanner').innerHTML = [
+    `<b>${t('pluginsBannerTitle')}</b> ${t('pluginsBannerBody', esc(short(meta.profilesDir)))}`,
+    meta.canRemove === false ? `<div style="margin-top:6px">${esc(t('plNoLauncher'))}</div>` : '',
+    meta.restartPending
+      ? `<div style="margin-top:8px"><b>${t('pluginRestartTitle')}</b><br>
+         ${t('pluginRestartBody', esc(fmtTime(meta.manifestMtime)), esc(fmtTime(meta.dshWebStartedAt)))}</div>`
+      : '',
+  ].join('');
+
+  if (!profiles.length) {
+    $('#pluginList').innerHTML = `<div class="empty">${esc(t('noPluginProfile'))}</div>`;
+    return;
+  }
+
+  const q = $('#qp').value.trim().toLowerCase();
+  const match = (p) => !q
+    || (p.name + ' ' + p.profile + ' ' + (p.description || '')).toLowerCase().includes(q);
+
+  const parts = [];
+  for (const profile of profiles) {
+    const items = rows.filter((p) => p.profile === profile.name && match(p));
+    if (!items.length) continue;
+    parts.push(`<div class="pgroup">
+      <span>${esc(t('plProfile'))} <code>${esc(profile.name)}</code></span>
+      <code title="${esc(profile.dir)}">${esc(short(profile.dir))}</code>
+      <button class="mini" data-open="profile:${esc(profile.name)}">${esc(t('open'))}</button>
+    </div>`);
+    parts.push(items.map(pluginRow).join(''));
+  }
+
+  $('#pluginList').innerHTML = parts.length
+    ? parts.join('')
+    : `<div class="empty">${esc(t('noPlugins'))}</div>`;
+}
+
+/** One plugin row: what it is, its version, and an uninstall button. */
+function pluginRow(p) {
+  const tags = [];
+  if (p.layer && p.removable) tags.push(`<span class="tag good">${esc(t('plLayer'))}</span>`);
+  if (p.inBox) tags.push(`<span class="tag">${esc(t('plInBox'))}</span>`);
+  if (p.dependency && !p.layer) tags.push(`<span class="tag warn">${esc(t('plPlain'))}</span>`);
+  if (p.hasClient) tags.push(`<span class="tag">${esc(t('plClient'))}</span>`);
+  if (!p.installed) tags.push(`<span class="tag bad">${esc(t('plMissing'))}</span>`);
+
+  const version = p.version ? `v${p.version}` : (p.spec ? esc(p.spec) : '—');
+  const button = p.removable
+    ? `<button class="mini danger" data-uninstall="${esc(p.profile)}" data-pkg="${esc(p.name)}">${esc(t('plUninstall'))}</button>`
+    : '';
+
+  return `<div class="row prow">
+    <div>
+      <div class="name"><code>${esc(p.name)}</code></div>
+      ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ''}
+      <div class="meta">${tags.join('')}</div>
+    </div>
+    <div class="right">${version} ${button}</div>
+  </div>`;
+}
+
+/**
  * Render the DSH tab: process status, three controls, the last start error,
  * and the command line the panel would use.
  *
@@ -1457,6 +1767,99 @@ function renderDsh() {
   $('#dshRuntimeTable').innerHTML = rows.join('');
 }
 
+/**
+ * The version card.
+ *
+ * Every branch renders an observation, and "not checked" is a distinct state
+ * from "up to date": the registry is only contacted when the user asks (or once
+ * per page load), so a panel that has never asked must not imply the installed
+ * DSH is current. The same rule explains the two error lines -- a version that
+ * could not be read and a registry that could not be reached are different
+ * failures and are reported separately.
+ */
+function renderVersion() {
+  const v = state.dshVersion || {};
+  const channels = v.channels || [];
+
+  $('#verTitle').textContent = t('verTitle');
+  $('#verInstalled').textContent = v.installed || t('verNotDetected');
+
+  const badge = $('#verBadge');
+  if (v.updateAvailable) {
+    badge.className = 'ver-badge warn';
+    badge.textContent = t('verAvailable', v.newest.version);
+  } else if (v.checkedAt) {
+    badge.className = 'ver-badge on';
+    badge.textContent = t('verUpToDate');
+  } else {
+    badge.className = 'ver-badge';
+    badge.textContent = t('verUnknown');
+  }
+
+  const rows = [];
+  rows.push(`<tr><td>${esc(t('verPackage'))}</td><td><code>${esc(v.packageName || '')}</code></td></tr>`);
+
+  // How the installed version was learned. A version read from the manifest is
+  // not the same evidence as one the command itself printed, and when neither
+  // worked the reason belongs on screen, not in a log.
+  const source = v.installed
+    ? t('verSourceDsh', esc(v.installedCommand || 'dsh --version'))
+    : esc(v.installedError || t('verSourceMissing'));
+  rows.push(`<tr><td>${esc(t('verInstalled'))}</td>
+    <td><code>${esc(v.installed || '—')}</code>
+    <div class="form-hint">${source}</div></td></tr>`);
+
+  for (const c of channels) {
+    const when = c.publishedAt ? fmtTime(c.publishedAt) : '—';
+    let action;
+    if (c.current) {
+      action = `<button class="mini" disabled>${esc(t('verCurrent'))}</button>`;
+    } else {
+      // A channel that is behind the installed version is a downgrade, not an
+      // update. It is still offered -- moving off `alpha` back to `latest` is a
+      // legitimate thing to want -- but it is labelled as what it is.
+      const label = c.newer ? t('verUpdateTo', c.version) : t('verSwitchTo', c.version);
+      const cls = c.newer && !versionUpdating ? 'primary mini' : 'mini';
+      action = `<button class="${cls}" data-update="${esc(c.version)}"${versionUpdating ? ' disabled' : ''}>`
+        + `${esc(label)}</button>`;
+      if (!c.newer) action += ` <span class="ver-older">${esc(t('verDowngrade'))}</span>`;
+    }
+    rows.push(`<tr><td>${esc(c.name)}</td>
+      <td><code>${esc(c.version)}</code>
+      <div class="form-hint">${esc(t('verPublished'))} ${esc(when)}</div>
+      <div style="margin-top:6px">${action}</div></td></tr>`);
+  }
+  $('#verTable').innerHTML = rows.join('');
+
+  const check = $('#verCheckBtn');
+  check.textContent = versionUpdating
+    ? t('verWorking', '')
+    : (versionChecking ? t('verChecking') : t('verCheck'));
+  check.disabled = versionChecking || versionUpdating || v.canCheck === false;
+
+  const hint = $('#verHint');
+  if (versionUpdating) {
+    hint.innerHTML = esc(t('verWorking', state.dshVersion?.newest?.version || ''));
+  } else if (v.checkError) {
+    hint.innerHTML = `<span class="warn">${esc(t('verCheckError', v.checkError))}</span>`;
+  } else if (v.canCheck === false) {
+    hint.textContent = t('verNoNpm');
+  } else if (!v.checkedAt) {
+    hint.textContent = t('verNeverChecked');
+  } else {
+    hint.innerHTML = t('verCheckedAt', esc(fmtTime(v.checkedAt)), esc(v.registry || ''));
+  }
+
+  const out = $('#verOutput');
+  out.style.display = versionOutput ? '' : 'none';
+  out.textContent = versionOutput;
+
+  // Only offered when an install actually landed after the running service
+  // booted; otherwise the panel would nag about a restart that changes nothing.
+  $('#verRestartBtn').style.display = v.restartRequired ? '' : 'none';
+  $('#verRestartBtn').textContent = t('verRestartNow');
+}
+
 function pathRow(label, value, target, keepFull) {
   const shown = value ? (keepFull ? value : short(value)) : t('notConfigured');
   const btn = value && target
@@ -1511,6 +1914,7 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === b));
   $('#view-skills').style.display = tab === 'skills' ? '' : 'none';
   $('#view-mcp').style.display = tab === 'mcp' ? '' : 'none';
+  $('#view-plugins').style.display = tab === 'plugins' ? '' : 'none';
   $('#view-dsh').style.display = tab === 'dsh' ? '' : 'none';
   $('#view-about').style.display = tab === 'about' ? '' : 'none';
 }));
@@ -1528,6 +1932,7 @@ $('#lang').addEventListener('click', () => {
 });
 $('#q').addEventListener('input', renderSkills);
 $('#qm').addEventListener('input', renderMcp);
+$('#qp').addEventListener('input', renderPlugins);
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-open]');
@@ -1655,6 +2060,101 @@ async function bulk(enabled) {
 }
 $('#skOff').addEventListener('click', () => bulk(false));
 $('#skOn').addEventListener('click', () => bulk(true));
+
+// Plugins tab: uninstall one plugin from one profile.
+//
+// The same shape as every other mutating handler here: disable the control,
+// run the action, force a fresh read (the cached answer is the one being
+// replaced), and report what was observed -- a non-zero pnpm exit arrives as
+// an error, never as a silent "done".
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-uninstall]');
+  if (!btn) return;
+  const profile = btn.dataset.uninstall;
+  const name = btn.dataset.pkg;
+  if (!profile || !name) return;
+  if (!confirm(t('plConfirm', profile, name))) return;
+  btn.disabled = true;
+  btn.textContent = t('plRemoving');
+  try {
+    const r = await api('/api/plugins/remove', { profile, name });
+    toast(`${t('plDone', r.name)} ${t('plRestartHint')}`);
+    await load(false, true);
+  } catch (err) {
+    toast(t('plFailed', err.message));
+    btn.disabled = false;
+    btn.textContent = t('plUninstall');
+  }
+});
+
+// Version card.
+//
+// Checking is a network call, so it is never on the poll path: the panel asks
+// once per page load and then only when the button is pressed. Installing is
+// the only action in this app that rewrites files outside DSH's own config, so
+// it is behind a confirm() that names both versions.
+async function checkForUpdates(fresh) {
+  if (versionUpdating) return;
+  versionChecking = true;
+  renderVersion();
+  try {
+    const r = await api(`/api/dsh/release${fresh ? '?fresh=1' : ''}`);
+    if (r.dshVersion) state.dshVersion = r.dshVersion;
+  } catch (err) {
+    toast(t('verFailed', err.message));
+  } finally {
+    versionChecking = false;
+    renderVersion();
+    // The chip carries the same verdict as the badge, so it has to move with it.
+    renderChips();
+  }
+}
+
+async function updateDshTo(version) {
+  if (versionUpdating) return;
+  const v = state.dshVersion || {};
+  const question = v.installed
+    ? t('verConfirm', version, v.installed)
+    : t('verConfirmReinstall', version);
+  if (!confirm(question)) return;
+
+  versionUpdating = true;
+  versionOutput = '';
+  renderVersion();
+  try {
+    const r = await api('/api/dsh/update', { version });
+    if (r.dshVersion) state.dshVersion = r.dshVersion;
+    versionOutput = [r.stdout, r.stderr].filter(Boolean).join('\n').trim();
+
+    // Three distinct outcomes, reported as what was measured. "npm exited 0"
+    // is not one of them: the version has to have actually moved, and if it did
+    // not, the reason (usually another dsh earlier on PATH) is the message.
+    if (!r.reachedTarget) {
+      toast(t('verNotReached', r.target, r.after || '?'));
+    } else if (!r.changed) {
+      toast(t('verAlreadyThere', r.after));
+    } else {
+      toast(t('verDone', r.before, r.after));
+    }
+    if (r.restartRequired) toast(t('verRestartHint'));
+  } catch (err) {
+    toast(t('verFailed', err.message));
+  } finally {
+    versionUpdating = false;
+    renderVersion();
+    renderChips();
+  }
+}
+
+$('#verCheckBtn').addEventListener('click', () => checkForUpdates(true));
+$('#verRestartBtn').addEventListener('click', () => {
+  if (confirm(t('dshRestartConfirm'))) dshAction('restart');
+});
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-update]');
+  if (!btn || btn.disabled) return;
+  await updateDshTo(btn.dataset.update);
+});
 
 // Paint the toggle glyph immediately rather than waiting for the first fetch to
 // resolve. This must come after `$` is initialised: `applyTheme` reads the

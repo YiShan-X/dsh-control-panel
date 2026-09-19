@@ -26,6 +26,8 @@ import path from 'node:path';
  * @property {string} patchFile        cordis.patch.yml -- enabled MCP blocks.
  * @property {string} disabledFile     Parked MCP blocks.
  * @property {string} settingsFile     DSH settings.yaml (model catalog + default).
+ * @property {string} profilesDir      DSH profiles -- each one owns its plugins.
+ * @property {string} dshPackage       npm package the version card tracks.
  * @property {boolean} ccEnabled
  * @property {string} ccHome
  * @property {string} ccDb
@@ -96,6 +98,15 @@ export function resolveConfig(env = process.env) {
       env.DSH_DISABLED_FILE || path.join(dshHome, 'mcp-manager', 'disabled.yml'),
     ),
     settingsFile: path.resolve(env.DSH_SETTINGS_FILE || path.join(dshHome, 'settings.yaml')),
+    // Plugins are profile-scoped, not home-scoped: `dsh plugin --profile <n>`
+    // runs pnpm inside `$DSH_HOME/profiles/<n>`, so that directory is the only
+    // place the plugin inventory can be read from.
+    profilesDir: path.resolve(env.DSH_PROFILES_DIR || path.join(dshHome, 'profiles')),
+    // The npm package whose version the DSH tab reports and can install. Kept
+    // configurable for the same reason `DSH_WEB_CMD` is: a fork or an internal
+    // mirror publishes under a different name, and the alternative -- editing
+    // this file -- is not something a user of a packaged app can do.
+    dshPackage: String(env.DSH_PANEL_DSH_PACKAGE || '@deepseek-ai/dsh').trim(),
     ccEnabled,
     ccHome,
     ccDb: path.resolve(env.DSH_PANEL_CC_DB || path.join(ccHome, 'cc-switch.db')),

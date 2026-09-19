@@ -19,6 +19,8 @@ import {
   stopDshWeb,
 } from './dsh.mjs';
 import { buildMcpState, setMcpEnabled } from './mcp.mjs';
+import { buildPluginState, removePlugin, resolveDshLauncher } from './plugins.mjs';
+import { buildVersionState, updateDsh } from './dshVersion.mjs';
 import { buildSkillState, disableSkill, enableSkill } from './skills.mjs';
 import { log } from './util.mjs';
 
@@ -144,6 +146,20 @@ export function createPanelServer(config, options) {
     // Reuse the probe above for the MCP restart comparison: one OS call per
     // request, not two.
     const mcp = await buildMcpState(config, { dshWebStartedAt: dsh.startedAt });
+    // Plugins live in the profile manifests, so this is a directory read, not a
+    // process probe. The boot time it is handed is only used for the "a plugin
+    // changed since dsh web started" comparison.
+    const plugins = await buildPluginState(config, { dshWebStartedAt: dsh.startedAt });
+    // Which DSH is installed. Deliberately *not* handed `release: true`: this
+    // runs on every poll of every open panel, and the registry is only consulted
+    // when the user asks (GET /api/dsh/release). The cheap local read is cached
+    // for a minute, so the first poll pays for `dsh --version` and the rest are
+    // free. `fresh` still forces it, because the refresh button is the user
+    // replacing a cached answer with a measured one.
+    const dshVersion = await buildVersionState(config, {
+      fresh,
+      dshWebStartedAt: dsh.startedAt,
+    });
     const start = startCommandInfo();
     const restartPending = Boolean(
       mcp.patchMtime && dsh.startedAt && new Date(mcp.patchMtime) > new Date(dsh.startedAt),
@@ -172,6 +188,23 @@ export function createPanelServer(config, options) {
         canRestart: typeof options.restartHook === 'function',
         files: mcp.files,
       },
+      plugins: plugins.plugins,
+      pluginProfiles: plugins.profiles,
+      pluginsMeta: {
+        profilesDir: config.profilesDir,
+        manifestMtime: plugins.manifestMtime,
+        dshWebStartedAt: plugins.dshWebStartedAt,
+        restartPending: plugins.restartPending,
+        // A host without a resolvable `dsh` can still list every plugin; the UI
+        // says why uninstalling is unavailable instead of offering a button
+        // that 501s. Resolved once here, not per row.
+        canRemove: resolveDshLauncher() !== null,
+      },
+      // Which DSH is installed and whether a newer one is published. Every field
+      // is an observation: `installedError` says why the version could not be
+      // read, and `checkError` says why the registry could not be reached, so a
+      // broken machine is diagnosable from the UI alone.
+      dshVersion,
       dsh: {
         ...dsh,
         canStart: canControlDsh,
@@ -190,6 +223,7 @@ export function createPanelServer(config, options) {
         ccSkills: config.ccSkills,
         patchFile: config.patchFile,
         disabledFile: config.disabledFile,
+        profilesDir: config.profilesDir,
       },
       pools: config.pools,
       pollMs: config.pollMs,
@@ -264,6 +298,52 @@ export function createPanelServer(config, options) {
         ensureSafeName(key);
         const result = await setMcpEnabled(config, key, Boolean(enabled));
         return sendJson(res, 200, { ok: true, ...result, restartRequired: true });
+      }
+
+      // Plugin uninstall. `removePlugin` re-validates both the profile and the
+      // package against what is installed on disk before spawning anything, so
+      // this route cannot be turned into "run pnpm on an arbitrary spec" --
+      // which is the one thing a localhost route any web page can POST to must
+      // never become. See plugins.mjs for the full reasoning.
+      if (route === 'POST /api/plugins/remove') {
+        const { profile, name } = await readBody(req);
+        const result = await removePlugin(config, String(profile ?? ''), String(name ?? ''));
+        return sendJson(res, 200, { ok: true, restartRequired: true, ...result });
+      }
+
+      // Which versions of DSH are published. Separate from /api/state because it
+      // is the only call in the app that crosses the network on the user's
+      // behalf: keeping it off the poll path is what stops a slow or unreachable
+      // registry from making the whole panel feel broken. `?fresh=1` is the
+      // "check again" button, and is also what a cached failure needs to clear.
+      if (route === 'GET /api/dsh/release') {
+        const fresh = url.searchParams.get('fresh') === '1';
+        const dsh = readDshStatus({ fresh });
+        const dshVersion = await buildVersionState(config, {
+          fresh,
+          release: true,
+          dshWebStartedAt: dsh.startedAt,
+        });
+        return sendJson(res, 200, { ok: true, dshVersion });
+      }
+
+      // Install a published DSH version. The body carries a channel name or an
+      // exact version and nothing else: `updateDsh` re-checks it against the
+      // registry's own list before a command line is built, so this localhost
+      // route cannot be used to run an arbitrary npm install. Same reasoning as
+      // /api/plugins/remove.
+      if (route === 'POST /api/dsh/update') {
+        const { version } = await readBody(req);
+        const dsh = readDshStatus({ fresh: true });
+        const result = await updateDsh(config, String(version ?? ''), {
+          dshWebStartedAt: dsh.startedAt,
+        });
+        const dshVersion = await buildVersionState(config, {
+          fresh: true,
+          release: false,
+          dshWebStartedAt: dsh.startedAt,
+        });
+        return sendJson(res, 200, { ok: true, ...result, dshVersion });
       }
 
       if (route === 'POST /api/open') {
@@ -342,11 +422,21 @@ function resolveOpenTarget(config, target) {
     ccHome: config.ccHome,
     ccSkills: config.ccSkills,
     ccDb: config.ccDb,
+    profilesDir: config.profilesDir,
   };
   if (Object.hasOwn(table, String(target))) return table[String(target)];
   if (String(target).startsWith('pool:')) {
     const pool = config.pools.find((p) => p.id === String(target).slice('pool:'.length));
     if (pool) return pool.dir;
+  }
+  // `profile:<name>` is a real profile directory, and only a real one: the
+  // manifest has to be there, so a crafted name cannot open an arbitrary path.
+  if (String(target).startsWith('profile:')) {
+    const name = String(target).slice('profile:'.length);
+    if (/^[A-Za-z0-9._-]+$/.test(name) && !name.startsWith('.')) {
+      const dir = path.join(config.profilesDir, name);
+      if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    }
   }
   return null;
 }

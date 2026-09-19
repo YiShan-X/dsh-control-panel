@@ -55,6 +55,8 @@ Environment
   DSH_SKILL_POOL        ${path.delimiter}-separated extra skill pools
   DSH_PATCH_FILE        MCP patch file                 (default $DSH_HOME/cordis.patch.yml)
   DSH_DISABLED_FILE     Parked MCP blocks              (default $DSH_HOME/mcp-manager/disabled.yml)
+  DSH_PROFILES_DIR      DSH profiles; each owns its plugins (default $DSH_HOME/profiles)
+  DSH_PANEL_DSH_PACKAGE npm package the version card tracks (default @deepseek-ai/dsh)
   DSH_WEB_CMD           Command used by the DSH tab's Start button (default "dsh web")
   CC_SWITCH_HOME        cc-switch home                 (default ~/.cc-switch)
   DSH_PANEL_CC_SWITCH   set to 0 to ignore cc-switch entirely

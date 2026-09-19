@@ -176,6 +176,19 @@ not.
 - Automatically wraps `npx` / `uvx` and friends in `cmd /c` on Windows, because
   libuv cannot spawn a `.cmd` shim directly
 
+**Plugins tab — uninstall only**
+
+- Every DSH profile's plugins in one list: the version actually on disk, whether
+  the package is a profile layer, and whether it ships a GUI page
+- In-box layers (`dsh-base`, `dsh-web-app`) are listed and marked as not
+  removable, so it is clear why the removable list is shorter than the roster
+  DSH itself shows
+- Uninstall runs `dsh plugin --profile <name> remove <pkg>` — the command you
+  would type by hand — so `pnpm-lock.yaml` stays in sync with the manifest. A
+  running `dsh web` keeps the plugin loaded until it restarts, and the tab says
+  so rather than pretending the removal already took effect
+- Installing is deliberately **not** offered; that path is `dsh plugin add`
+
 **It also tells you about problems you cannot otherwise see.** The most common
 one: a skill whose `SKILL.md` has no frontmatter, or a `name` that is not
 kebab-case, is **silently discarded** by DSH — one warning in a log, invisible
@@ -216,7 +229,14 @@ simply not implemented:
 5. **It only opens named locations.** The `/api/open` endpoint accepts a fixed
    set of keys, never a caller-supplied path, so a stray web page cannot use the
    local server to launch anything.
-6. **It binds to loopback only.** `127.0.0.1` by default, and the desktop build
+6. **It cannot install anything.** Plugin uninstall runs the documented
+   `dsh plugin ... remove` command and nothing else, and `/api/plugins/remove`
+   refuses any package that is not already a dependency of the named profile.
+   A stray web page can therefore not turn the panel into a "run pnpm on this
+   spec" primitive. "Uninstalled" is reported only after re-reading the profile
+   and finding the dependency actually gone — a pnpm run that exits 0 without
+   changing anything is reported as a failure.
+7. **It binds to loopback only.** `127.0.0.1` by default, and the desktop build
    uses an OS-assigned port so it can never collide with anything else.
 
 ---
@@ -234,6 +254,8 @@ environment; browser mode additionally accepts `--port` and `--host`.
 | `DSH_SKILL_POOL` | see below | `${path.delimiter}`-separated list of skill pools |
 | `DSH_PATCH_FILE` | `$DSH_HOME/cordis.patch.yml` | Enabled MCP blocks |
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | Parked MCP blocks |
+| `DSH_PROFILES_DIR` | `$DSH_HOME/profiles` | DSH profiles — each one owns its plugins |
+| `DSH_PANEL_DSH_PACKAGE` | `@deepseek-ai/dsh` | npm package the version card tracks and installs |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch home |
 | `DSH_PANEL_CC_SWITCH` | `1` | Set to `0` to ignore cc-switch entirely |
 | `DSH_WEB_CMD` | `dsh web` | Command the **DSH** tab's Start button runs |
@@ -261,6 +283,38 @@ cost) and can start, stop or restart it. Two things are worth knowing:
 
 `DSH_PANEL_NO_CONTROL=1` turns the tab into a read-only reporter: the buttons
 render disabled with the reason instead of failing on click.
+
+### Which DSH is installed, and whether there is a newer one
+
+The same tab answers "what am I running, and is there an update?":
+
+- **The installed version** is read by running `dsh --version` — through the same
+  command the Start button uses, so `DSH_WEB_CMD` cannot make the panel report
+  the version of a *different* installation than the one it manages. If that
+  command cannot run, the panel falls back to the installed `package.json` and
+  says which of the two answered.
+- **The published versions** come from `npm view <package> --json`, run with your
+  own npm. That is deliberate: your `.npmrc`, your registry mirror and your
+  `HTTP_PROXY` / `HTTPS_PROXY` all apply, and the version the panel offers is by
+  construction the version an install would fetch. The card shows which registry
+  answered.
+- **The registry is only contacted when you ask** — once per page load, plus the
+  *Check for updates* button. `/api/state` never waits on the network, so an
+  unreachable registry cannot make the rest of the panel feel broken; the failure
+  is reported in the card instead.
+- **Every dist-tag is listed** (`latest`, `next`, `alpha`) with its version and
+  publish date, so you can move between channels in either direction. A channel
+  behind your installed version is labelled older rather than offered as an
+  update.
+- **Updating runs `npm install -g <package>@<version>`** and then *re-reads* the
+  version. npm exiting 0 is not treated as success: if the `dsh` on your `PATH`
+  still reports the old number — a second installation earlier on `PATH` is the
+  usual reason — the panel says so instead of claiming it worked.
+- **A running `dsh web` keeps the code it booted with**, so the card offers a
+  restart once an install has landed after the service started.
+
+Installs are global and the builds are unsigned, so the panel asks for
+confirmation naming both versions before it touches anything.
 
 ### The configuration hub is optional
 
@@ -304,6 +358,7 @@ src/
     frontmatter.mjs  SKILL.md parsing, without a YAML library
     skills.mjs       skill model, link creation and removal
     mcp.mjs          MCP model, cc-switch -> DSH converter
+    plugins.mjs      profile plugin inventory, uninstall via `dsh plugin`
     patch.mjs        the delimited-block editor
     ccswitch.mjs     optional read-only SQLite source
     dsh.mjs          dsh web process probe, cache and lifecycle

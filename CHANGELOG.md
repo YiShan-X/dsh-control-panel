@@ -5,6 +5,52 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **DSH version management.** The DSH tab now answers "what am I running, and is
+  there an update?" and can install one. The installed version is read with
+  `dsh --version` — through the same command the Start button runs, so
+  `DSH_WEB_CMD` cannot make the panel report a *different* installation than the
+  one it manages; a broken shim falls back to the installed `package.json`, and
+  the card says which of the two answered. Published versions come from
+  `npm view <package> --json` executed with the user's own npm rather than a
+  hand-rolled HTTP client, because that is what makes `.npmrc`, a registry mirror
+  and `HTTP_PROXY`/`HTTPS_PROXY` apply for free — and it is the same tool that
+  performs the install, so the version offered is by construction the version an
+  install would fetch. Every dist-tag is listed with its publish date, and a
+  channel behind the installed version is labelled older rather than recommended
+  as an update. `GET /api/dsh/release` is deliberately off the `/api/state` poll
+  path: the registry is contacted once per page load and on the check button, so
+  an unreachable registry cannot stall the panel — the failure is reported in the
+  card. `POST /api/dsh/update` accepts a channel name or an exact version and
+  re-validates it against the registry's own version list before a command line
+  exists, so this localhost route cannot be turned into an arbitrary
+  `npm install`. Success is reported from a *re-read* of `dsh --version`, never
+  from npm's exit code: an installation earlier on `PATH` that swallows the
+  update is reported as a failure with the reason, and a running `dsh web` is
+  offered a restart only when the install landed after it booted. New
+  `src/core/dshVersion.mjs`, new `$DSH_PANEL_DSH_PACKAGE`, and 28 tests.
+
+- **Plugins tab — uninstall only.** A DSH plugin is an npm dependency of a
+  *profile*, so the tab reads `$DSH_HOME/profiles/<name>/package.json` and
+  classifies every row from those two lists: a package that is both a dependency
+  and an entry in `dsh.profile.bundles` is a third-party plugin, an entry with no
+  dependency behind it is an in-box layer (`dsh-base`, `dsh-web-app`) and is shown
+  as not removable rather than silently omitted. Uninstalling runs
+  `dsh plugin --profile <name> remove <pkg>` — the documented command, which
+  forwards to pnpm inside the profile directory and reconciles the bundle list —
+  instead of editing the manifest here, which was rejected because it leaves
+  `pnpm-lock.yaml` describing a dependency the manifest no longer has and the
+  next `dsh plugin add` then fails on the mismatch. "Uninstalled" is reported
+  only after re-reading the profile and finding the dependency actually gone, so
+  a pnpm run that exits 0 without changing anything is reported as a failure.
+  Installing is deliberately not offered. New `POST /api/plugins/remove` route,
+  new `$DSH_PROFILES_DIR`, new `profile:<name>` open target, and a restart-pending
+  banner driven by the profile manifest's mtime against the running service's
+  boot time.
+
 ## [1.2.0] - 2026-09-14
 
 ### Added

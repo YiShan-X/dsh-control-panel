@@ -92,6 +92,37 @@ The strongest form used here: build a real per-platform executable, point
 `DSH_WEB_CMD` at it, launch it for real, and have it write a marker file — that
 proves the program *executed*, which a mocked `spawn` never can.
 
+### Screenshots need `--disable-gpu` in an agent session
+
+`npm run screenshot` (and any `DSH_PANEL_SMOKE_CAPTURE` run) fails with
+`capture: UnknownVizError` and writes **no file** when Electron is launched from
+a non-interactive session, because there is no GPU compositor to capture from:
+
+```bash
+node_modules/electron/dist/electron.exe --disable-gpu .   # capture works
+```
+
+Note that the failure is a *renderer error*, so smoke reports
+`SMOKE fail: 1 renderer error(s)` rather than anything mentioning the GPU — the
+message that points at the cause is the `capture:` line above it.
+
+### Reading the outside world: use the user's own tool
+
+`src/core/dshVersion.mjs` needs the npm registry (and therefore the user's
+proxy, mirror and auth) but may not import `node_modules`. Shelling out to the
+user's `npm view` was chosen over a hand-rolled HTTPS client because Node's
+global `fetch` **ignores `HTTP_PROXY`/`HTTPS_PROXY`**, and doing it properly
+would mean implementing a CONNECT tunnel over `node:tls` that then has to agree
+with whatever registry npm is actually configured against. Two lessons worth
+keeping:
+
+- On this project's own machine `.npmrc` points at `registry.npmmirror.com`, not
+  npmjs.org — a check that hard-coded the npmjs URL would have disagreed with
+  the install it was predicting.
+- `npm view <pkg> --json` reports where the **publisher** built the tarball in
+  `_resolved` (`/home/runner/work/...` — useless). The field that names the
+  registry that answered *you* is `dist.tarball`.
+
 ---
 
 ## 4. Conventions
@@ -195,8 +226,22 @@ restart from a foreground tool call and expect a result.
 
 - `POST /api/dsh/{stop,restart}` has never been driven end-to-end against a real
   `dsh web` (see §7). Unit and injected fake coverage only.
+- `POST /api/dsh/update` has never driven a real `npm install -g`. Tests run it
+  against a stand-in `npm` on `PATH` that writes the version file the stand-in
+  `dsh` prints, which proves the ordering (validate → install → *re-read*) but
+  not npm's own behaviour. Two things are therefore unverified: whether npm can
+  rewrite the install tree on Windows while the panel is being **hosted by** the
+  `dsh web` it is replacing, and whether the `dsh` shim is recreated in place.
+  Both are why the card reports what it re-read instead of trusting the exit code.
 - `DSH_WEB_CMD` can only be set through the environment; there is no in-app
   field, so a user whose `dsh` is not on PATH can read the hint but not act on it.
+- Plugin uninstall (`src/core/plugins.mjs`) runs the *documented*
+  `dsh plugin --profile <n> remove <pkg>` — a pnpm forwarder that also reconciles
+  `dsh.profile.bundles` — and re-reads the manifest before claiming success.
+  Editing `package.json` directly was rejected: it desyncs `pnpm-lock.yaml`, and
+  the next `dsh plugin add` then fails on the mismatch. Tests cover the whole
+  path against a stand-in `dsh` on `PATH`; no test drives a real pnpm run, so the
+  real-CLI behaviour is unverified in CI.
 - `DSH_SETTINGS_FILE` still exists in `config.mjs` with no consumer left.
 - The `llm-deepseek` / model-catalog code paths were removed with the Models tab;
   if you find references to them, they are stale.

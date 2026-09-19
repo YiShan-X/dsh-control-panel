@@ -89,6 +89,22 @@ describe('HTTP layer', () => {
     fs.mkdirSync(path.dirname(sb.patchFile), { recursive: true });
     fs.writeFileSync(sb.patchFile, `# keep me\n${MANUAL_BLOCK}`, 'utf8');
 
+    // One profile with one installed plugin and one in-box layer. The plugin
+    // rows are read from files, so no `dsh` has to exist for these assertions.
+    const profileDir = path.join(sb.dshHome, 'profiles', 'web');
+    fs.mkdirSync(path.join(profileDir, 'node_modules', 'fake-plugin'), { recursive: true });
+    fs.writeFileSync(path.join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { 'fake-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'fake-plugin'] } },
+    }, null, 2), 'utf8');
+    fs.writeFileSync(
+      path.join(profileDir, 'node_modules', 'fake-plugin', 'package.json'),
+      JSON.stringify({ name: 'fake-plugin', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }),
+      'utf8',
+    );
+
     fake = makeFakeControl();
     const { server } = createPanelServer(config, {
       publicDir: path.join(ROOT, 'public'),
@@ -220,6 +236,47 @@ describe('HTTP layer', () => {
   it('cannot generate an MCP block without a config hub', async () => {
     const r = await post('/api/mcp/toggle', { key: 'nowhere', enabled: true });
     assert.equal(r.status, 404);
+  });
+
+  it('lists plugins per profile without spawning anything', async () => {
+    const state = (await get('/api/state')).body;
+    assert.equal(state.paths.profilesDir, path.join(sb.dshHome, 'profiles'));
+    assert.equal(state.pluginProfiles.length, 1);
+
+    const plugin = state.plugins.find((p) => p.name === 'fake-plugin');
+    assert.equal(plugin.profile, 'web');
+    assert.equal(plugin.version, '1.0.0');
+    assert.equal(plugin.removable, true);
+    assert.equal(plugin.layer, true);
+
+    const inBox = state.plugins.find((p) => p.name === '@deepseek-ai/dsh-base');
+    assert.equal(inBox.removable, false);
+    assert.equal(inBox.inBox, true);
+  });
+
+  it('refuses to uninstall anything that is not a plugin of that profile', async () => {
+    // Every one of these is rejected before a process is ever spawned, which is
+    // what keeps this route from becoming "run pnpm on an arbitrary spec".
+    const notADependency = await post('/api/plugins/remove', {
+      profile: 'web',
+      name: '@deepseek-ai/dsh-base',
+    });
+    assert.equal(notADependency.status, 400);
+
+    const unsafe = await post('/api/plugins/remove', { profile: 'web', name: '../../evil' });
+    assert.equal(unsafe.status, 400);
+
+    const noProfile = await post('/api/plugins/remove', { profile: 'nope', name: 'fake-plugin' });
+    assert.equal(noProfile.status, 404);
+  });
+
+  it('opens only profile directories that exist', async () => {
+    const good = await post('/api/open', { target: 'profile:web' });
+    assert.equal(good.status, 200);
+    assert.equal(good.body.path, path.join(sb.dshHome, 'profiles', 'web'));
+
+    const bad = await post('/api/open', { target: 'profile:..\\..' });
+    assert.equal(bad.status, 400);
   });
 
   it('only opens named locations', async () => {
