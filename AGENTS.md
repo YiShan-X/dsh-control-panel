@@ -123,6 +123,21 @@ Note that the failure is a *renderer error*, so smoke reports
 `SMOKE fail: 1 renderer error(s)` rather than anything mentioning the GPU — the
 message that points at the cause is the `capture:` line above it.
 
+### `ELECTRON_RUN_AS_NODE=1` must be cleared before running Electron
+
+A DSH agent session exports `ELECTRON_RUN_AS_NODE=1`, and with it set the
+Electron binary runs as plain Node: the window never appears and the launch dies
+with a CLI error that names a Chromium switch, e.g.
+
+```
+electron.exe: bad option: --disable-gpu
+electron.exe: bad option: --user-data-dir=...
+```
+
+`npm run smoke` and `npm run screenshot` inherit the variable and fail the same
+way. Clear it for the child process (`Remove-Item env:ELECTRON_RUN_AS_NODE`) —
+this is a property of the invoking session, not of the app.
+
 ### Reading the outside world: use the user's own tool
 
 `src/core/dshVersion.mjs` needs the npm registry (and therefore the user's
@@ -261,6 +276,61 @@ If the tag already triggered a failed run, check whether a release was created
 `electron-builder --dir` downloads an Electron build the first time and writes a
 ~250 MB executable; allow a few minutes and run it as a background job rather
 than blocking on it. It never publishes by itself — the tag does that.
+
+### `npm install` can leave Electron with no binary, and report success anyway
+
+The `electron` package ships no executable: its postinstall runs `install.js`,
+which fetches `electron-v<version>-<platform>-<arch>.zip` from **GitHub
+releases** (`release-assets.githubusercontent.com`) and unpacks it into
+`node_modules/electron/dist`, writing the relative path into `path.txt`. When
+that fetch cannot complete, `npm install` still exits 0 for the tree — it has
+installed the *package* — and the damage only appears later as
+`npm run smoke` / `npm run screenshot` failing with an unusable binary, while
+`require('electron/package.json').version` reports the new version perfectly
+happily. Check `Test-Path node_modules/electron/dist/electron.exe` (and a
+non-empty `path.txt`) after any install, not the version number.
+
+Two dead ends, both measured on this machine:
+
+- **The npmmirror binary mirror** (`ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`)
+  configures cleanly and answers `200` to a HEAD request, but the actual zip
+  transfer stalled at 0 bytes for minutes. `registry.npmmirror.com` serving the
+  *npm* metadata is not evidence that it will serve the *binary*.
+- **`HTTP_PROXY` / `HTTPS_PROXY` do not reach the installer.** With both set,
+  `node node_modules/electron/install.js` opened a **direct** connection to
+  GitHub anyway (`Get-NetTCPConnection -OwningProcess <pid>` showed remote 443 at
+  a GitHub CDN address and nothing on the proxy port) and hung. `@electron/get`
+  resolves its proxy through `global-agent`, which never sees those variables
+  here.
+
+What works, and is worth doing first because it is one command:
+
+```bash
+curl.exe -x <proxy-url> -L -o "$TEMP/electron-v<ver>-win32-x64.zip" \
+  https://github.com/electron/electron/releases/download/v<ver>/electron-v<ver>-win32-x64.zip
+# then: Expand-Archive into node_modules/electron/dist  (replacing it wholesale)
+# and:  Set-Content node_modules/electron/path.txt -Value "electron.exe" -NoNewline
+```
+
+`path.txt` is a plain relative path *inside* `dist` (`electron.exe` on Windows,
+`electron` on Linux, `Electron.app/Contents/MacOS/Electron` on macOS) — that is
+exactly what `scripts/electron-binary.mjs` hands to `spawn`, so a hand-extracted
+`dist` is enough for `npm run smoke`. The archive is ~150 MB and came down in
+~18 s through the proxy.
+
+**Do not pipe a long-lived Electron child through `Select-Object -Last N`.** A
+`npm run smoke 2>&1 | Select-Object -Last 12` invocation sat for 3 minutes with
+no output and neither the script's own 60 s timeout nor a process exit — while
+the identical run redirecting to a file finished in 2 s with a real verdict:
+
+```powershell
+Start-Process .\node_modules\electron\dist\electron.exe `
+  -ArgumentList '--disable-gpu',"--user-data-dir=$env:TEMP\smoke" -Wait -PassThru `
+  -RedirectStandardOutput "$env:TEMP\smoke.out" -RedirectStandardError "$env:TEMP\smoke.err"
+```
+
+Read `smoke.out` for `SMOKE ok: window loaded`; the exit code alone is not the
+evidence.
 
 If `git push` or that download fails with a connection or TLS error while the
 network is otherwise fine, an HTTP proxy may be required. Set it per repository
