@@ -7,16 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.0.0] - 2026-10-05
 
-- **The documentation screenshots were printing this machine's real process
-  details.** `scripts/screenshot.mjs` sets `DSH_PANEL_PROBE_WEB=0` so its images
-  cannot depend on what the machine happens to be running, but a host that wires
-  real process control bypasses that flag — so the newly added DSH tab
-  screenshot showed a real pid, start time and uptime, which is precisely the
-  leak the synthetic fixtures exist to prevent. A capture run now feeds the DSH
-  tab a fixed, plausible status. Adding the DSH tab to the docs set is what made
-  it visible; the hero, MCP and About shots were never affected.
+### Removed
+
+- **The DSH tab, and with it all `dsh web` process control.** The official DSH
+  desktop app now owns the DSH lifecycle, so a panel that starts, stops and
+  restarts a `dsh web` process was managing something its users no longer run.
+  Gone in one piece rather than left half-wired: the tab and its version card,
+  the `Restart dsh web now` button in the MCP banner, `POST /api/dsh/{start,stop,
+  restart}`, `GET /api/dsh/status`, `GET /api/dsh/release`, `POST /api/dsh/update`
+  and `POST /api/restart`, the `dshControl` / `restartHook` host options, the
+  `DSH_PANEL_NO_CONTROL` and `DSH_PANEL_DSH_PACKAGE` environment variables,
+  `src/core/dshVersion.mjs` (installing a global `dsh` over the desktop app's own
+  copy was the wrong thing to offer), and the lifecycle half of
+  `src/core/dsh.mjs`. The panel still *probes* for a running service — the MCP
+  and plugin banners compare its boot time against the patch/manifest mtime — so
+  `dsh.mjs` keeps the process filter, the cached probe and the npm-shim /
+  executable resolution that `dsh plugin remove` depends on. The restart banners
+  now instruct the user to quit and reopen DSH instead of offering a button the
+  panel can no longer honour. One consequence for the tests: `/api/state` no
+  longer carries a `dsh` or `dshVersion` payload, and the fake process table that
+  made the old assertions deterministic is gone with it — the sandbox sets
+  `probeWeb: false` and asserts the propagation instead.
+
+  This also made an unreleased fix moot: the documentation screenshots no longer
+  include a DSH tab, so the synthetic process status that kept that shot from
+  printing this machine's real pid, uptime and start time is gone with it.
+  `docs/screenshot-dsh.png` and `docs/zh/screenshot-dsh.png` are deleted.
 
 ## [1.3.1] - 2026-09-19
 

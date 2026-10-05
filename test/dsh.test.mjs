@@ -7,7 +7,6 @@ import {
   clearExecutableCache,
   dshWebStatus,
   findDshWebProcess,
-  invalidateDshWebCache,
   isDshWeb,
   normalizeIso,
   parseWindowsRows,
@@ -15,66 +14,11 @@ import {
   peekDshWebCache,
   pickExecutable,
   resolveExecutable,
-  restartDshWeb,
   shellShimSpec,
-  startCommandInfo,
-  startDshWeb,
-  stopDshWeb,
   tokenizeCmdline,
   unwrapNpmShim,
   warmDshWebCache,
 } from '../src/core/dsh.mjs';
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Create a real, executable stand-in for the `dsh` CLI and point the panel at
- * it, so the lifecycle tests exercise the actual spawn path instead of a mock.
- *
- * Written per platform because that is the whole point: the Windows form is a
- * `.cmd` shim, which is exactly the shape that could not be spawned at all, and
- * the POSIX form is a shell script. Both record that they ran, which is how a
- * test can tell "spawn reported success" from "the program actually executed".
- *
- * @returns {{dir: string, env: string, marker: string, restore: () => void}}
- */
-function makeFakeDsh() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshcp-fakedsh-'));
-  const script = path.join(dir, 'fake-cli.mjs');
-  const marker = path.join(dir, 'ran.txt');
-  fs.writeFileSync(script, `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(' '));\n`, 'utf8');
-
-  let env;
-  if (process.platform === 'win32') {
-    const cmd = path.join(dir, 'dsh.cmd');
-    // The npm shim shape: `%_prog%` chosen by an IF, then program + script.
-    fs.writeFileSync(cmd, [
-      '@ECHO off',
-      'SETLOCAL',
-      `"${process.execPath}" "${script}" %*`,
-      '',
-    ].join('\r\n'), 'utf8');
-    env = `"${cmd}"`;
-  } else {
-    const sh = path.join(dir, 'dsh');
-    fs.writeFileSync(sh, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, 'utf8');
-    fs.chmodSync(sh, 0o755);
-    env = sh;
-  }
-
-  const before = process.env.DSH_WEB_CMD;
-  process.env.DSH_WEB_CMD = `${env} web`;
-  return {
-    dir,
-    env,
-    marker,
-    restore: () => {
-      if (before === undefined) delete process.env.DSH_WEB_CMD;
-      else process.env.DSH_WEB_CMD = before;
-      fs.rmSync(dir, { recursive: true, force: true });
-    },
-  };
-}
 
 /**
  * Put a `dsh` on PATH for the duration of one test.
@@ -121,10 +65,10 @@ function withFakeDshOnPath() {
 
 describe('spawnable executables', () => {
   /*
-   * The DSH tab's Start button shipped broken with `spawn dsh ENOENT`: `dsh` is
-   * a `.cmd` shim on Windows, and libuv cannot start one. `mcp.mjs` had always
-   * handled this for `npx`; the DSH start path had not. These tests pin both the
-   * resolution and the wrapper so it cannot come back.
+   * `dsh` is a `.cmd` shim on Windows, and libuv cannot start one: spawning it
+   * raises ENOENT, the same error as "there is no such program". `plugins.mjs`
+   * runs `dsh plugin remove` through this layer, so these tests pin both the
+   * resolution and the wrapper.
    */
   it('wraps a Windows shell shim through cmd /c', () => {
     const spec = shellShimSpec('C:\\nvm4w\\nodejs\\dsh.cmd', ['web'], 'win32');
@@ -269,27 +213,11 @@ describe('spawnable executables', () => {
     }
   });
 
-  it('reports a missing command instead of failing with a bare ENOENT', async () => {
-    const before = process.env.DSH_WEB_CMD;
-    try {
-      process.env.DSH_WEB_CMD = 'dsh-definitely-not-on-path-12345 web';
-      await assert.rejects(
-        () => startDshWeb({
-          find: () => null,
-          spawn: async () => { throw new Error('must not be reached'); },
-          settleMs: 1,
-        }),
-        (err) => {
-          // The executable is resolved before spawning, so the caller gets a
-          // sentence it can act on rather than a bare libuv code.
-          assert.match(err.message, /could not be launched|failed to spawn|not on PATH|not found/);
-          return true;
-        },
-      );
-    } finally {
-      if (before === undefined) delete process.env.DSH_WEB_CMD;
-      else process.env.DSH_WEB_CMD = before;
-    }
+  it('reports a missing command as null instead of throwing', () => {
+    // The resolver is what turns "the user can type it" into "we can spawn it";
+    // a name that is not there has to come back as null so the caller can say
+    // why, rather than as a bare libuv code.
+    assert.equal(resolveExecutable('dsh-definitely-not-on-path-12345'), null);
   });
 });
 
@@ -311,18 +239,6 @@ describe('dsh web probe cache', () => {
     assert.equal(peekDshWebCache().at, first.at, 'the warm entry should have been reused');
     assert.equal(status.probed, true);
     assert.ok(Number.isFinite(status.probeMs));
-  });
-
-  it('re-probes once invalidated, so a kill is never reported as still running', () => {
-    warmDshWebCache();
-    const before = peekDshWebCache().at;
-    invalidateDshWebCache();
-    assert.equal(peekDshWebCache().invalidated, true);
-
-    dshWebStatus();
-    const after = peekDshWebCache();
-    assert.notEqual(after.at, before, 'an invalidated cache must re-probe');
-    assert.equal(after.invalidated, false, 'the re-probe clears the flag');
   });
 
   it('asks the clock before the OS: a young entry is reused for every poll', () => {
@@ -373,138 +289,6 @@ describe('dsh web process model', () => {
     // The probe shells out; on a locked-down host that call can fail outright.
     // Callers treat null as "not running", which is the only safe reading.
     assert.doesNotThrow(() => findDshWebProcess());
-  });
-});
-
-describe('dsh web lifecycle', () => {
-  const proc = { pid: 111, cmdline: '"C:\\node.exe" dsh web', startedAt: null, cpuMs: null, rssBytes: null };
-
-  it('starts from scratch by actually running the command', async () => {
-    /*
-     * A real spawn, not a mock. `startDshWeb` resolves its executable before
-     * launching, so a mocked spawn would test the mock's PATH assumptions
-     * rather than the launch path -- which is exactly how this suite passed on
-     * Windows and failed on Ubuntu, where `dsh` is not installed.
-     */
-    const fake = makeFakeDsh();
-    try {
-      let live = null;
-      const result = await startDshWeb({
-        find: () => live,
-        settleMs: 250,
-      });
-      assert.equal(result.changed, true);
-      assert.equal(result.alive, false, 'nothing is registered in the fake process table');
-
-      // The stronger claim: the program really executed.
-      await sleep(400);
-      assert.ok(fs.existsSync(fake.marker), 'the launched command should have run');
-      assert.equal(fs.readFileSync(fake.marker, 'utf8').trim(), 'web');
-    } finally {
-      fake.restore();
-    }
-  });
-
-  it('reports a start that never became a process', async () => {
-    const fake = makeFakeDsh();
-    try {
-      const result = await startDshWeb({
-        find: () => null,
-        spawn: () => 333,
-        settleMs: 1,
-      });
-      assert.equal(result.changed, true);
-      assert.equal(result.newPid, 333);
-      assert.equal(result.alive, false);
-      assert.equal(result.livePid, null);
-    } finally {
-      fake.restore();
-    }
-  });
-
-  it('is a no-op when the service is already running', async () => {
-    const result = await startDshWeb({
-      find: () => proc,
-      spawn: () => { throw new Error('must not spawn'); },
-      settleMs: 1,
-    });
-    assert.equal(result.changed, false);
-    assert.equal(result.existingPid, 111);
-    assert.equal(result.alive, true);
-  });
-
-  it('stops nothing without complaining', async () => {
-    const result = await stopDshWeb({ find: () => null });
-    assert.equal(result.changed, false);
-    assert.match(result.note, /not running/);
-  });
-
-  it('restarts with the command line it found, not the default', async () => {
-    const spawned = [];
-    // A live executable, so the stale-command guard has nothing to complain
-    // about; `node` is the one binary this test suite is guaranteed to have.
-    const withArgs = { ...proc, cmdline: `${process.execPath} fake-dsh-web.mjs --port 3080` };
-    const result = await restartDshWeb({
-      find: () => withArgs,
-      spawn: (cmd) => { spawned.push(cmd); return 444; },
-      alive: () => false,
-      settleMs: 1,
-    });
-    assert.deepEqual(spawned, [`${process.execPath} fake-dsh-web.mjs --port 3080`]);
-    assert.equal(result.changed, true);
-    assert.equal(result.killedPid, 111);
-    assert.equal(result.newPid, 444);
-    assert.equal(result.commandFellBack, false);
-  });
-
-  it('falls back when the captured command no longer resolves', async () => {
-    const fake = makeFakeDsh();
-    try {
-      // A switched Node version manager leaves the old absolute path behind.
-      const stale = { ...proc, cmdline: '"C:\\nvm4w\\old\\node.exe" dsh web --port 3080' };
-      const spawned = [];
-      const result = await restartDshWeb({
-        find: () => stale,
-        spawn: (cmd) => { spawned.push(cmd); return 445; },
-        alive: () => false,
-        settleMs: 1,
-      });
-      assert.equal(result.commandFellBack, true);
-      assert.equal(result.capturedCommand, stale.cmdline);
-      assert.notEqual(spawned[0], stale.cmdline, 'a dead executable must not be replayed');
-    } finally {
-      fake.restore();
-    }
-  });
-
-  it('degrades a restart of nothing into a plain start', async () => {
-    const fake = makeFakeDsh();
-    try {
-      let live = null;
-      const result = await restartDshWeb({
-        find: () => live,
-        spawn: () => { live = { ...proc, pid: 555 }; return 555; },
-        settleMs: 1,
-      });
-      assert.equal(result.changed, true);
-      assert.equal(result.killedPid, null);
-      assert.equal(result.newPid, 555);
-    } finally {
-      fake.restore();
-    }
-  });
-
-  it('reports the command the Start button would run', () => {
-    const before = process.env.DSH_WEB_CMD;
-    try {
-      delete process.env.DSH_WEB_CMD;
-      assert.deepEqual(startCommandInfo(), { command: 'dsh web', source: 'default' });
-      process.env.DSH_WEB_CMD = 'dsh web --port 9999';
-      assert.deepEqual(startCommandInfo(), { command: 'dsh web --port 9999', source: 'DSH_WEB_CMD' });
-    } finally {
-      if (before === undefined) delete process.env.DSH_WEB_CMD;
-      else process.env.DSH_WEB_CMD = before;
-    }
   });
 });
 

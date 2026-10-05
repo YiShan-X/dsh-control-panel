@@ -152,15 +152,13 @@ function buildSandbox({ lang, theme, tabs, target }) {
       DSH_SKILL_POOL: pool,
       DSH_PANEL_CC_SWITCH: '0',
       // Documentation images must not depend on whether this machine happens to
-      // be running `dsh web` right now.
+      // be running `dsh web` right now: the probe decides whether the MCP tab's
+      // "restart pending" banner is shown.
       DSH_PANEL_PROBE_WEB: '0',
       DSH_PANEL_SMOKE: '1',
       DSH_PANEL_SMOKE_LANG: lang,
       DSH_PANEL_SMOKE_THEME: theme ?? 'dark',
-      // The DSH tab is in the docs set because it is where service control and
-      // the version cards live -- the two things the README describes in prose
-      // and a reader otherwise has to imagine.
-      DSH_PANEL_SMOKE_TABS: tabs ?? 'mcp,dsh,about',
+      DSH_PANEL_SMOKE_TABS: tabs ?? 'mcp,about',
       DSH_PANEL_SMOKE_CAPTURE: target,
     },
   };

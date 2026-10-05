@@ -36,15 +36,18 @@ skills 和 MCP 服务器的定义**会进入每一次模型请求**，无论你�
 | | 状态存在哪 | 改动何时生效 |
 |---|---|---|
 | **Skills** | `$DSH_HOME/skills` 下指向 skill 池的软链接 | ⚡ **立即生效，不用重启** |
-| **MCP** | `$DSH_HOME/cordis.patch.yml` 里的配置块 | 🔁 **必须重启 `dsh web`** |
+| **MCP** | `$DSH_HOME/cordis.patch.yml` 里的配置块 | 🔁 **必须重启 DSH** |
 
 **Skills 为什么能热生效**：DSH 的 `dsh-skill-filesystem` provider 会监听
 skill 根目录，加/删条目会触发 catalog 重建，下一次请求立刻可见。这是实测结论，
 实验过程见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
-**MCP 为什么不行**：MCP 是装配层，`dsh web` 启动时读一次组合，没有热加载。
+**MCP 为什么不行**：MCP 是装配层，DSH 启动时读一次组合，没有热加载。
 所以面板改成**主动告诉你**是否真的有未生效的改动——它把 patch 文件的 mtime 与
-正在运行的 `dsh web` 进程启动时间做比较。没改过就不会瞎报警。
+正在运行的 DSH 服务启动时间做比较。没改过就不会瞎报警。
+
+面板**不负责**这次重启：DSH 的生命周期归官方桌面版本管，横幅只负责提示，
+你自己退出并重新打开 DSH。
 
 ---
 
@@ -152,7 +155,7 @@ Windows 上也可以直接双击 `start.cmd`：已构建桌面版时启动桌面
 - 内置层（`dsh-base`、`dsh-web-app`）也会列出来并标注「不可卸载」，这样能解释清楚
   为什么可卸载的条目比 DSH 里看到的 roster 少
 - 卸载执行 `dsh plugin --profile <name> remove <pkg>`——也就是你手动会敲的那条命令，
-  因此 `pnpm-lock.yaml` 不会和 manifest 脱节。运行中的 `dsh web` 要重启后才会真正
+  因此 `pnpm-lock.yaml` 不会和 manifest 脱节。运行中的 DSH 要重启后才会真正
   卸掉它，标签页会直说这一点，而不是假装已经生效
 - **不提供安装**，安装请用 `dsh plugin add`
 
@@ -206,42 +209,18 @@ frontmatter、或者 `name` 不是 kebab-case 的 skill，会被 DSH **静默丢
 | `DSH_PATCH_FILE` | `$DSH_HOME/cordis.patch.yml` | 启用的 MCP 块 |
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | 停用的 MCP 块 |
 | `DSH_PROFILES_DIR` | `$DSH_HOME/profiles` | DSH 配置档目录——插件按配置档安装 |
-| `DSH_PANEL_DSH_PACKAGE` | `@deepseek-ai/dsh` | 版本卡片跟踪并安装的 npm 包 |
 | `DSH_PANEL_REPO` | `YiShan-X/dsh-control-panel` | 面板自身更新检查读取的 `owner/repo` |
 | `DSH_PANEL_DOWNLOAD_DIR` | `~/Downloads` | 更新安装包的保存位置 |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch 目录 |
 | `DSH_PANEL_CC_SWITCH` | `1` | 设为 `0` 可完全忽略 cc-switch |
-| `DSH_WEB_CMD` | `dsh web` | **DSH** 标签页「启动」按钮执行的命令 |
-| `DSH_PANEL_NO_CONTROL` | `0` | 设为 `1` 可禁用 `dsh web` 的启停/重启 |
-| `DSH_PANEL_PROBE_WEB` | `1` | 设为 `0` 可停止探测运行中的 `dsh web` |
+| `DSH_WEB_CMD` | PATH 上的 `dsh` | 插件命令使用的 `dsh` 启动器（`dsh` 不在 PATH 上时设置） |
+| `DSH_PANEL_PROBE_WEB` | `1` | 设为 `0` 可停止探测运行中的 DSH 服务 |
 | `DSH_PANEL_PORT` | `8791` | 浏览器模式端口（桌面模式自动选空闲端口） |
 | `DSH_PANEL_HOST` | `127.0.0.1` | 浏览器模式监听地址 |
 | `DSH_PANEL_POLL_MS` | `30000` | UI 自动刷新间隔 |
 
 未设置 `DSH_SKILL_POOL` 时，skill 池依次为 cc-switch 的池（`~/.cc-switch/skills`）
 和 `$DSH_HOME/skill-pool`。
-
-### 装了哪个 DSH，有没有新版本
-
-**DSH** 标签页同时回答「我在跑哪个版本、有没有更新」：
-
-- **已安装版本**来自 `dsh --version`，走的是「启动」按钮用的同一个命令，所以
-  `DSH_WEB_CMD` 不会让面板报出另一个安装的版本。这条命令跑不起来时，面板回退去读
-  已安装的 `package.json`，并明确说明版本是哪一个来源读出来的。
-- **线上版本**来自 `npm view <包名> --json`，用的是**你自己的 npm**。这是刻意的：
-  你的 `.npmrc`、镜像源、`HTTP_PROXY` / `HTTPS_PROXY` 全部生效，面板给出的版本
-  天然就是安装会真正拉到的那个版本。卡片会显示是哪个 registry 回答的。
-- **只有你主动检查时才联网**——每次打开页面一次，加上「检查更新」按钮。
-  `/api/state` 从不等待网络，所以 registry 不可达不会让整个面板卡住，失败会写在卡片里。
-- **所有 dist-tag 都列出**（`latest`、`next`、`alpha`），带版本号和发布时间，可以在
-  通道之间双向切换。低于已安装版本的通道会标成「较早」，而不是当成更新来推荐。
-- **更新执行 `npm install -g <包名>@<版本>`，然后重新读一次版本号。** npm 退出码为 0
-  不算成功：如果 `PATH` 里的 `dsh` 仍然报旧版本（多半是 PATH 里还有另一个更靠前的安装），
-  面板会直接说出来，而不是声称更新成功。
-- **运行中的 `dsh web` 仍然用着启动时加载的代码**，所以只要安装在服务启动之后落地，
-  卡片就会给出重启入口。
-
-安装是全局的、构建包未签名，因此面板会先弹确认框并把新旧两个版本号都写清楚。
 
 ### 面板自身也能检查并更新
 
@@ -299,7 +278,12 @@ npm run pack          # electron-builder --dir，免打包快速验证
 
 ## 常见问题
 
-**MCP 开了没反应。** 设计如此，必须重启 `dsh web`。MCP 标签页顶部的横幅会告诉你。
+**MCP 开了没反应。** 设计如此，必须重启 DSH。MCP 标签页顶部的横幅会告诉你是否
+真的有未生效的改动，退出并重新打开 DSH 即可生效。
+
+**改了 MCP 却没看到横幅？** 面板只能和它认得出的服务比较：探测逻辑要求进程命令行里
+同时出现 `dsh` 和 `web`。如果 DSH 是以别的可执行名或包装脚本启动的，就没有启动时间
+可比，横幅会一直沉默。另外 `DSH_PANEL_PROBE_WEB=0` 会彻底关掉探测。
 
 **页面一片空白。** 浏览器模式下直接访问 `http://127.0.0.1:8791/api/state`，
 能看到 JSON 就说明服务是好的，问题在页面。桌面版用 `Help → Reveal log file` 看日志。

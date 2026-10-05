@@ -40,8 +40,9 @@ Break one of these and the change is wrong, however good the intent:
   hand-written comments. `test/server.test.mjs` asserts this.
 - **The patch file always stays a valid YAML array** (`ensureValidArray`), never
   comments-only, because the loader throws on a null parse.
-- **Never claim success on a non-event.** A lifecycle function reports what it
-  *observed* after acting (`alive`, `livePid`), not what it intended.
+- **Never claim success on a non-event.** A mutating function reports what it
+  *observed* after acting — `removePlugin` re-reads the profile manifest before
+  it says "uninstalled" — not what it intended.
 - **The panel must not carry credentials.** It reads them out of the user's DSH
   and cc-switch config; it never stores its own.
 
@@ -72,9 +73,11 @@ Rules:
 
 ### A global CLI is a symlink on POSIX and a `.cmd` on Windows
 
-The asymmetry bites wherever you need to find *the package behind* a command
-(`manifestSearchStart` in `src/core/dshVersion.mjs`). npm installs the two
-platforms differently:
+The asymmetry bites wherever you need to find *the package behind* a command.
+It was learned while resolving the `dsh` launcher for the DSH version card
+(`src/core/dshVersion.mjs`, removed with the DSH tab), and it still applies to
+`resolveDshLauncher()` in `src/core/plugins.mjs`. npm installs the two platforms
+differently:
 
 - **Windows** writes a `.cmd` shim whose text names the script — readable, and
   `unwrapNpmShim()` turns it into `node <script>`.
@@ -106,8 +109,9 @@ every runner. Either:
 - `{ skip: process.platform !== 'win32' }` and keep the Windows-only case there.
 
 The strongest form used here: build a real per-platform executable, point
-`DSH_WEB_CMD` at it, launch it for real, and have it write a marker file — that
-proves the program *executed*, which a mocked `spawn` never can.
+`DSH_WEB_CMD` at it, run the operation for real, and have the stand-in write a
+marker file — that proves the program *executed*, which a mocked `spawn` never
+can. `test/plugins.test.mjs` does exactly this for `dsh plugin remove`.
 
 ### Screenshots need `--disable-gpu` in an agent session
 
@@ -140,13 +144,14 @@ this is a property of the invoking session, not of the app.
 
 ### Reading the outside world: use the user's own tool
 
-`src/core/dshVersion.mjs` needs the npm registry (and therefore the user's
-proxy, mirror and auth) but may not import `node_modules`. Shelling out to the
-user's `npm view` was chosen over a hand-rolled HTTPS client because Node's
-global `fetch` **ignores `HTTP_PROXY`/`HTTPS_PROXY`**, and doing it properly
-would mean implementing a CONNECT tunnel over `node:tls` that then has to agree
-with whatever registry npm is actually configured against. Two lessons worth
-keeping:
+`src/core/dshVersion.mjs` (removed with the DSH tab) used to read the npm
+registry, and the reasoning is worth keeping for anything that reaches the
+network on the user's behalf: it may not import `node_modules`, and shelling out
+to the user's own `npm view` was chosen over a hand-rolled HTTPS client because
+Node's global `fetch` **ignores `HTTP_PROXY`/`HTTPS_PROXY`**, and doing it
+properly would mean implementing a CONNECT tunnel over `node:tls` that then has
+to agree with whatever registry npm is actually configured against. Two lessons
+worth keeping:
 
 - On this project's own machine `.npmrc` points at `registry.npmmirror.com`, not
   npmjs.org — a check that hard-coded the npmjs URL would have disagreed with
@@ -154,6 +159,9 @@ keeping:
 - `npm view <pkg> --json` reports where the **publisher** built the tarball in
   `_resolved` (`/home/runner/work/...` — useless). The field that names the
   registry that answered *you* is `dist.tarball`.
+
+The one surviving network call is `src/core/panelUpdate.mjs`, which goes through
+`src/core/httpGet.mjs` for exactly the proxy reason above.
 
 ### The panel's own update reads `latest*.yml`, not the GitHub API
 
@@ -224,7 +232,7 @@ than committing a private key to a public repository.
 - **One decision per commit.** The message says what was observed and why the
   alternative was rejected, not just what changed.
 - **i18n: every `t('key')` must exist in BOTH `en` and `zh-CN`.** `t()` falls
-  back to the key name, so a missing key renders as `dshControlUnavailable` and
+  back to the key name, so a missing key renders as `puNeverChecked` and
   nothing fails. `test/ui.test.mjs` now enforces this — run it after touching
   `public/index.html`.
 - **Delete dead code with the feature.** There is no Models tab; if you find
@@ -350,38 +358,34 @@ error) from "this repository's remote is wrong" (GitHub answers).
 
 ---
 
-## 7. Verifying process control (the awkward part)
+## 7. The panel no longer manages a process
 
-This panel manages `dsh web` — and `dsh web` is usually what is hosting the
-agent session. `POST /api/dsh/stop` therefore **kills your own turn**: the HTTP
-call never returns and the turn is cut off mid-flight. Do not drive stop or
-restart from a foreground tool call and expect a result.
+`dsh web` process control — start, stop, restart, the `dshControl` bundle, the
+`/api/dsh/*` routes and the DSH tab — was **removed** when the official DSH
+desktop app became the way people run DSH. The panel still *probes* for a running
+`dsh web` (`src/core/dsh.mjs`) because the MCP and plugin banners compare its
+boot time against the patch/manifest mtime, but it never kills or spawns
+anything, and it no longer installs a global `dsh` either
+(`src/core/dshVersion.mjs` is gone). Two consequences worth remembering:
 
-- Verify the *safe* paths live: `GET /api/state`, `/api/dsh/status`,
-  `POST /api/dsh/start` (a no-op when something is already running).
-- For the destructive paths, use a stand-in process whose command line contains
-  both `dsh` and `web` tokens, spawned into a temp directory, and confirm with
-  the OS process table — never with the panel's own report.
-- To rehearse a real stop, arm a **detached** restorer first that waits, kills
-  the stand-in, and relaunches the captured command line. Anything that is a
-  child of the current turn dies with it, so the restorer must outlive the turn.
-- Prefer reproducing the bug independently *before* the fix and re-running the
-  same reproduction after: for the ENOENT bug, `spawn('dsh')` failing and
-  `spawn(resolved)` succeeding was the only real evidence.
+- The probe is the only OS call left, and it is cached for 15 s. A host that
+  wants no PowerShell round trip at all sets `DSH_PANEL_PROBE_WEB=0`; every
+  restart comparison then reads "no boot time", and the banners stay quiet.
+- If process control is ever wanted back, do not resurrect it half-way: the
+  reason it was awkward is that `dsh web` is usually the thing hosting the agent
+  session, so stopping it kills the turn that asked for the stop. Any revival
+  needs a detached restorer and a stand-in process, verified against the OS
+  process table rather than the panel's own report.
+
+Prefer reproducing a bug independently *before* the fix and re-running the same
+reproduction after: for the ENOENT bug that shaped `resolveExecutable`,
+`spawn('dsh')` failing and `spawn(resolved)` succeeding was the only real
+evidence.
 
 ---
 
 ## 8. Known open items
 
-- `POST /api/dsh/{stop,restart}` has never been driven end-to-end against a real
-  `dsh web` (see §7). Unit and injected fake coverage only.
-- `POST /api/dsh/update` has never driven a real `npm install -g`. Tests run it
-  against a stand-in `npm` on `PATH` that writes the version file the stand-in
-  `dsh` prints, which proves the ordering (validate → install → *re-read*) but
-  not npm's own behaviour. Two things are therefore unverified: whether npm can
-  rewrite the install tree on Windows while the panel is being **hosted by** the
-  `dsh web` it is replacing, and whether the `dsh` shim is recreated in place.
-  Both are why the card reports what it re-read instead of trusting the exit code.
 - `POST /api/panel/update`: the **download path is verified end-to-end against
   the real release** — 111,413,415 bytes of `dsh-control-panel-1.2.0-x64-setup.exe`
   streamed through the proxy, byte count matching the feed's `size` and the
@@ -389,11 +393,11 @@ restart from a foreground tool call and expect a result.
   *after* the file lands: `openPath` has never actually launched an installer,
   and the "download and install" button only appears in a **packaged** app, so
   that branch of the route has only been exercised by unit tests.
-- The panel's update check and the DSH version check both run once per page load.
-  Two network round trips per load was judged acceptable (both cached, neither on
-  the `/api/state` poll path), but nobody has measured it on a slow link.
+- Only the panel's own update check runs once per page load now; it is cached and
+  never on the `/api/state` poll path, but nobody has measured it on a slow link.
 - `DSH_WEB_CMD` can only be set through the environment; there is no in-app
-  field, so a user whose `dsh` is not on PATH can read the hint but not act on it.
+  field, so a user whose `dsh` is not on PATH can read the hint but not act on
+  it. It now only names the launcher for `dsh plugin` commands (plugins.mjs).
 - Plugin uninstall (`src/core/plugins.mjs`) runs the *documented*
   `dsh plugin --profile <n> remove <pkg>` — a pnpm forwarder that also reconciles
   `dsh.profile.bundles` — and re-reads the manifest before claiming success.
@@ -401,6 +405,10 @@ restart from a foreground tool call and expect a result.
   the next `dsh plugin add` then fails on the mismatch. Tests cover the whole
   path against a stand-in `dsh` on `PATH`; no test drives a real pnpm run, so the
   real-CLI behaviour is unverified in CI.
+- The restart-pending banners can only fire when the probe recognises the running
+  service: it matches a process whose command line contains both `dsh` and `web`
+  (`isDshWeb`). A DSH desktop build that does not look like that will simply
+  never show the banner — the panel cannot yet tell "restarted" from "not found".
 - `DSH_SETTINGS_FILE` still exists in `config.mjs` with no consumer left.
 - The `llm-deepseek` / model-catalog code paths were removed with the Models tab;
   if you find references to them, they are stale.

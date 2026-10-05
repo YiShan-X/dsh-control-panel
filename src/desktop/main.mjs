@@ -18,13 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig } from '../core/config.mjs';
-import {
-  dshWebStatus,
-  restartDshWeb,
-  startDshWeb,
-  stopDshWeb,
-  warmDshWebCache,
-} from '../core/dsh.mjs';
+import { warmDshWebCache } from '../core/dsh.mjs';
 import { createPanelServer, listen } from '../core/server.mjs';
 import { log } from '../core/util.mjs';
 
@@ -457,7 +451,7 @@ async function captureScreenshots(base) {
   // Which secondary tabs to capture is the caller's choice: the full docs set
   // wants all of them, an extra theme variant just wants the hero shot.
   const wanted = (process.env.DSH_PANEL_SMOKE_TABS ?? 'mcp,about').split(',').filter(Boolean);
-  for (const [tab, suffix] of [['mcp', '-mcp'], ['dsh', '-dsh'], ['about', '-about']]) {
+  for (const [tab, suffix] of [['mcp', '-mcp'], ['about', '-about']]) {
     if (!wanted.includes(tab)) continue;
     const clicked = await win.webContents.executeJavaScript(
       `(() => { const b = document.querySelector('[data-tab="${tab}"]'); if (!b) return false; b.click(); return true; })()`,
@@ -471,57 +465,10 @@ async function startServer() {
   // Honour an explicit port if one was set, otherwise take whatever is free.
   const requestedPort = process.env.DSH_PANEL_PORT ? config.port : 0;
 
-  // One bundle serves both entry points into process control: the MCP tab's
-  // "restart dsh web now" banner and the DSH tab's three buttons. Sharing the
-  // implementation is what keeps the two from disagreeing about what happened.
-  const dshControl = {
-    status: (opts) => dshWebStatus(opts),
-    start: () => startDshWeb(),
-    stop: () => stopDshWeb(),
-    restart: () => restartDshWeb(),
-  };
-
-  /*
-   * Synthetic process status for documentation captures.
-   *
-   * `scripts/screenshot.mjs` sets `DSH_PANEL_PROBE_WEB=0` so its images cannot
-   * depend on what this machine happens to be running -- but a host that wires
-   * real process control *bypasses that flag* (`readDshStatus` prefers
-   * `dshControl`), so the DSH tab screenshot ended up printing this machine's
-   * real pid, start time and uptime. That is exactly the leak the screenshot
-   * script exists to prevent, and the leak only became visible once the DSH tab
-   * was added to the capture set.
-   *
-   * A fixed, plausible status is also simply better documentation: the rest of
-   * that script's fixtures are synthetic too, and a demo image should not change
-   * depending on whether the machine generating it is busy. Start and stop stay
-   * wired to the real implementation -- capturing never clicks them.
-   */
-  const captureStatus = process.env.DSH_PANEL_SMOKE && process.env.DSH_PANEL_SMOKE_CAPTURE
-    ? {
-      running: true,
-      pid: 4242,
-      cmdline: '"C:\\Program Files\\nodejs\\node.exe" "C:\\...\\dsh\\lib\\bin.js" web',
-      // Relative to capture time so the uptime reads sensibly and stays stable.
-      startedAt: new Date(Date.now() - (2 * 3600 + 14 * 60) * 1000).toISOString(),
-      uptimeMs: (2 * 3600 + 14 * 60) * 1000,
-      cpuMs: 41230,
-      rssBytes: 214 * 1024 * 1024,
-      probeMs: 6,
-      probed: true,
-    }
-    : null;
-
-  if (captureStatus) {
-    dshControl.status = () => captureStatus;
-  }
-
   const { server } = createPanelServer(config, {
     publicDir: path.join(ROOT, 'public'),
     version: app.getVersion(),
     openPath: (p) => shell.openPath(p),
-    dshControl,
-    restartHook: () => restartDshWeb(),
     // Only an installed app has an installation to replace. A dev run
     // (`npm run desktop`) reports that honestly instead of offering to download
     // an installer for a program it is not running from.

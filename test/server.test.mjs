@@ -30,60 +30,25 @@ const MANUAL_BLOCK = [
 ].join('\n');
 
 /**
- * A fake `dsh web` process table plus a fake control bundle, so the DSH routes
- * can be exercised without touching the test runner's own machine state. The
- * server only ever sees the four functions.
+ * A fake `dsh web` process table was wired into this server until the DSH tab
+ * was removed. Only its *boot time* still matters -- the MCP and plugin
+ * "restart pending" comparisons -- and that is a plain timestamp, so the
+ * sandbox turns the probe off (`DSH_PANEL_PROBE_WEB=0`) instead of injecting a
+ * process. Tests that need a boot time assert it through `/api/state`.
  */
-function makeFakeControl() {
-  const calls = [];
-  let status = {
-    running: true,
-    pid: 4242,
-    cmdline: '"C:\\node.exe" dsh web',
-    startedAt: '2026-09-14T10:00:00.000Z',
-    uptimeMs: 60000,
-    cpuMs: 1200,
-    rssBytes: 64 * 1024 * 1024,
-    probeMs: 7,
-    probed: true,
-  };
-  return {
-    calls,
-    setStatus(next) { status = { ...status, ...next }; },
-    bundle: {
-      status: (opts) => {
-        calls.push({ kind: 'status', fresh: Boolean(opts?.fresh) });
-        return status;
-      },
-      start: async () => {
-        calls.push({ kind: 'start' });
-        status = { ...status, running: true, pid: 5001 };
-        return { changed: true, newPid: 5001, alive: true, livePid: 5001 };
-      },
-      stop: async () => {
-        calls.push({ kind: 'stop' });
-        status = { ...status, running: false, pid: null, startedAt: null, uptimeMs: null };
-        return { changed: true, killedPid: 4242, forced: false };
-      },
-      restart: async () => {
-        calls.push({ kind: 'restart' });
-        status = { ...status, running: true, pid: 6001, startedAt: '2026-09-14T11:00:00.000Z' };
-        return { changed: true, killedPid: 4242, newPid: 6001, alive: true, livePid: 6001 };
-      },
-    },
-  };
-}
 
 describe('HTTP layer', () => {
   /** @type {ReturnType<typeof makeSandbox>} */
   let sb;
   let base;
   let bound;
-  let fake;
 
   before(async () => {
     sb = makeSandbox();
-    const config = resolveConfig(sb.env);
+    // `probeWeb: false` keeps the boot-time probe (a PowerShell round trip on
+    // Windows) out of the test run: what is asserted here is the HTTP layer, and
+    // the probe has its own tests in dsh.test.mjs.
+    const config = { ...resolveConfig(sb.env), probeWeb: false };
     writeSkill(sb.pool, 'alpha', { description: 'Alpha does a thing.' });
     writeSkill(sb.pool, 'gamma', { description: 'Gamma does a thing.' });
     fs.mkdirSync(path.dirname(sb.patchFile), { recursive: true });
@@ -105,12 +70,10 @@ describe('HTTP layer', () => {
       'utf8',
     );
 
-    fake = makeFakeControl();
     const { server } = createPanelServer(config, {
       publicDir: path.join(ROOT, 'public'),
       version: 'test',
       openPath: async () => null,
-      dshControl: fake.bundle,
     });
     bound = await listen(server, { host: '127.0.0.1', port: 0 });
     base = bound.url;
@@ -288,115 +251,35 @@ describe('HTTP layer', () => {
     assert.equal(good.body.path, sb.dshHome);
   });
 
-  it('reports the DSH status through /api/state', async () => {
+  it('reports a boot time from the probe, and stays quiet when there is none', async () => {
     const state = (await get('/api/state')).body;
-    assert.equal(state.dsh.running, true);
-    assert.equal(state.dsh.pid, 4242);
-    assert.equal(state.dsh.canStart, true);
-    assert.equal(state.dsh.canStop, true);
-    assert.equal(state.dsh.canRestart, true);
-    assert.equal(state.dsh.probed, true);
-    assert.equal(state.dsh.uptimeMs, 60000);
-    assert.equal(state.dsh.startCommand, 'dsh web');
-    assert.equal(state.dsh.startCommandSource, 'default');
+    // Probing is off in this sandbox, which is the same answer a host gets when
+    // nothing is running: no boot time to compare against, so no banner.
+    assert.equal(state.mcpMeta.dshWebStartedAt, null);
+    assert.equal(state.mcpMeta.restartPending, false);
+    assert.equal(state.pluginsMeta.dshWebStartedAt, null);
+    assert.equal(state.pluginsMeta.restartPending, false);
+    // The removed tabs' payloads must not come back by accident.
+    assert.equal(state.dsh, undefined);
+    assert.equal(state.dshVersion, undefined);
   });
 
-  it('reuses one probe for both the DSH tab and the MCP restart banner', async () => {
-    const seen = fake.calls.length;
-    const state = (await get('/api/state')).body;
-    const statusCalls = fake.calls.slice(seen).filter((c) => c.kind === 'status');
-    assert.equal(statusCalls.length, 1, 'expected exactly one status probe per request');
-    // The banner compares the patch mtime with the boot time the DSH tab shows.
-    assert.equal(state.mcpMeta.dshWebStartedAt, state.dsh.startedAt);
-  });
-
-  it('forces a re-probe only when asked', async () => {
-    const cached = fake.calls.length;
-    await get('/api/state');
-    assert.equal(fake.calls.slice(cached).at(-1).fresh, false);
-
-    const forced = fake.calls.length;
-    await get('/api/state?fresh=1');
-    assert.equal(fake.calls.slice(forced).at(-1).fresh, true);
-  });
-
-  it('exposes the process probe on its own route', async () => {
-    const r = await get('/api/dsh/status');
-    assert.equal(r.status, 200);
-    assert.equal(r.body.running, true);
-    assert.equal(r.body.pid, 4242);
-    assert.equal(r.body.canControl, true);
-  });
-
-  it('starts, stops and restarts through the API', async () => {
-    const stopped = await post('/api/dsh/stop', {});
-    assert.equal(stopped.status, 200);
-    assert.equal(stopped.body.killedPid, 4242);
-    assert.equal((await get('/api/dsh/status')).body.running, false);
-
-    const started = await post('/api/dsh/start', {});
-    assert.equal(started.status, 200);
-    assert.equal(started.body.alive, true);
-    assert.equal((await get('/api/dsh/status')).body.pid, 5001);
-
-    const restarted = await post('/api/dsh/restart', {});
-    assert.equal(restarted.status, 200);
-    assert.equal(restarted.body.newPid, 6001);
-    assert.equal((await get('/api/dsh/status')).body.pid, 6001);
+  it('no longer answers any process-control route', async () => {
+    // The DSH tab and the "restart dsh web now" banner were removed with the
+    // DSH lifecycle, so these routes must be gone rather than half-wired.
+    for (const [method, route] of [
+      ['GET', '/api/dsh/status'], ['GET', '/api/dsh/release'],
+      ['POST', '/api/dsh/start'], ['POST', '/api/dsh/stop'],
+      ['POST', '/api/dsh/restart'], ['POST', '/api/dsh/update'],
+      ['POST', '/api/restart'],
+    ]) {
+      const res = method === 'GET' ? await get(route) : await post(route, {});
+      assert.equal(res.status, 404, `expected ${method} ${route} to be gone`);
+    }
   });
 
   it('has no route for unknown paths', async () => {
     const r = await post('/api/nope', {});
     assert.equal(r.status, 404);
-  });
-});
-
-describe('HTTP layer without process control', () => {
-  /** @type {ReturnType<typeof makeSandbox>} */
-  let sb;
-  let base;
-  let bound;
-
-  before(async () => {
-    sb = makeSandbox();
-    const config = resolveConfig(sb.env);
-    const { server } = createPanelServer(config, {
-      publicDir: path.join(ROOT, 'public'),
-      version: 'test',
-      openPath: async () => null,
-    });
-    bound = await listen(server, { host: '127.0.0.1', port: 0 });
-    base = bound.url;
-  });
-
-  after(async () => {
-    await bound?.close();
-    sb.cleanup();
-  });
-
-  it('says so instead of offering a button that would fail', async () => {
-    const res = await fetch(`${base}/api/state`);
-    const state = await res.json();
-    assert.equal(state.dsh.canStart, false);
-    assert.equal(state.dsh.canStop, false);
-    assert.equal(state.dsh.canRestart, false);
-    assert.equal(state.mcpMeta.canRestart, false);
-  });
-
-  it('answers 501 for every DSH action', async () => {
-    for (const action of ['start', 'stop', 'restart']) {
-      const res = await fetch(`${base}/api/dsh/${action}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{}',
-      });
-      assert.equal(res.status, 501, `expected 501 for ${action}`);
-    }
-    const banner = await fetch(`${base}/api/restart`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    assert.equal(banner.status, 501);
   });
 });

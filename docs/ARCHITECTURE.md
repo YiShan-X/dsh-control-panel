@@ -45,14 +45,16 @@ and rebuilds the catalog when it changes. The experiment:
 No restart at any point.
 
 **MCP is not hot.** MCP servers are assembled at boot. The composition is read
-once; there is no watcher. A change to `cordis.patch.yml` is inert until
-`dsh web` restarts.
+once; there is no watcher. A change to `cordis.patch.yml` is inert until DSH
+restarts.
 
 Rather than nagging the user about a restart that may not be needed, the panel
 compares two timestamps: the patch file's `mtime` against the creation time of
 the running `dsh web` process. The banner appears only when the former is later.
-If that probe fails — a locked-down machine, an unusual process list — the
-banner simply does not appear; the rest of the app is unaffected.
+If that probe fails — a locked-down machine, an unusual process list, or a DSH
+that does not identify itself as `dsh web` — the banner simply does not appear;
+the rest of the app is unaffected. The panel does not perform the restart: DSH's
+own desktop app owns its lifecycle.
 
 ## Safety is structural, not procedural
 
@@ -137,7 +139,7 @@ has drifted out of three documents at once before.
 
 The unit tests cover the parsers where the bugs actually live: YAML frontmatter
 (including the block scalars and the kebab-case rule), the delimited-block
-editor, the cc-switch → DSH converter, and the `dsh web` process layer
+editor, the cc-switch → DSH converter, and the process-probe layer
 (executable resolution, npm-shim unwrapping, the boot-time cache). Those last
 ones are written to run on any host, because the same suite has to pass on CI
 runners that have no `dsh` installed and no Windows under them.

@@ -12,13 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig } from './core/config.mjs';
-import {
-  dshWebStatus,
-  restartDshWeb,
-  startDshWeb,
-  stopDshWeb,
-  warmDshWebCache,
-} from './core/dsh.mjs';
+import { warmDshWebCache } from './core/dsh.mjs';
 import { createPanelServer, listen } from './core/server.mjs';
 import { log } from './core/util.mjs';
 
@@ -56,13 +50,12 @@ Environment
   DSH_PATCH_FILE        MCP patch file                 (default $DSH_HOME/cordis.patch.yml)
   DSH_DISABLED_FILE     Parked MCP blocks              (default $DSH_HOME/mcp-manager/disabled.yml)
   DSH_PROFILES_DIR      DSH profiles; each owns its plugins (default $DSH_HOME/profiles)
-  DSH_PANEL_DSH_PACKAGE npm package the version card tracks (default @deepseek-ai/dsh)
   DSH_PANEL_REPO        owner/repo the panel's own update check reads
   DSH_PANEL_DOWNLOAD_DIR  where an update installer is saved (default ~/Downloads)
-  DSH_WEB_CMD           Command used by the DSH tab's Start button (default "dsh web")
+  DSH_WEB_CMD           dsh launcher used for plugin commands and for the
+                        restart-pending check (default: the dsh on PATH)
   CC_SWITCH_HOME        cc-switch home                 (default ~/.cc-switch)
   DSH_PANEL_CC_SWITCH   set to 0 to ignore cc-switch entirely
-  DSH_PANEL_NO_CONTROL  set to 1 to disable start/stop/restart of dsh web
   DSH_PANEL_PORT        Port (same as --port)
   DSH_PANEL_HOST        Bind address (same as --host)
 `;
@@ -122,22 +115,6 @@ function openBrowser(url) {
   return openPathNative(url);
 }
 
-/**
- * The DSH process control bundle this host exposes. All four entries are the
- * same functions the desktop build uses, so the two hosts cannot drift.
- */
-export const CLI_DSH_CONTROL = {
-  status: (opts) => dshWebStatus(opts),
-  start: () => startDshWeb(),
-  stop: () => stopDshWeb(),
-  restart: () => restartDshWeb(),
-};
-
-/** `DSH_PANEL_NO_CONTROL=1` degrades the panel to a read-only reporter. */
-function controlEnabled(env) {
-  return !/^(1|true|yes|on)$/i.test(String(env.DSH_PANEL_NO_CONTROL ?? ''));
-}
-
 async function main() {
   const env = { ...process.env };
   const parsed = parseArgs(process.argv.slice(2), env);
@@ -147,7 +124,6 @@ async function main() {
   if (parsed.error) { process.stderr.write(`${parsed.error}\n\n${usage()}`); return 2; }
 
   const config = resolveConfig(env);
-  const control = controlEnabled(env);
 
   if (parsed.printConfig) {
     process.stdout.write(`${JSON.stringify(config, null, 2)}\n`);
@@ -158,15 +134,6 @@ async function main() {
     publicDir: path.join(ROOT, 'public'),
     version: readVersion(),
     openPath: openPathNative,
-    // Browser mode is a real process manager, not a read-only viewer: the
-    // person who launched `dsh-control-panel` asked for it to manage `dsh web`.
-    // Without this the DSH tab is three permanently disabled buttons, which
-    // reads as a bug rather than as a policy.
-    //
-    // The panel only ever binds loopback, so this is not a remote control
-    // surface. `DSH_PANEL_NO_CONTROL=1` turns the whole thing off for a host
-    // that should only report.
-    ...(control ? { dshControl: CLI_DSH_CONTROL, restartHook: restartDshWeb } : {}),
   }).server;
 
   let bound;
@@ -189,10 +156,10 @@ async function main() {
   log(`  mcp   : ${config.patchFile}`);
   if (!fs.existsSync(config.ccDb)) log(`  note  : no cc-switch DB at ${config.ccDb} (that is fine)`);
 
-  // Probe the service once now, so the first UI paint is not stuck behind a
-  // PowerShell round trip. Never fatal: a host that cannot enumerate processes
-  // just reports "not running".
-  if (config.probeWeb && control) {
+  // Probe the service once now, so the restart-pending banner on the first
+  // paint is already decided. Never fatal: a host that cannot enumerate
+  // processes just reports "not running".
+  if (config.probeWeb) {
     const status = warmDshWebCache();
     log(status.running
       ? `  service: dsh web running (pid ${status.pid}, up ${Math.round((status.uptimeMs ?? 0) / 1000)}s)`

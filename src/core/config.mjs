@@ -27,7 +27,6 @@ import path from 'node:path';
  * @property {string} disabledFile     Parked MCP blocks.
  * @property {string} settingsFile     DSH settings.yaml (model catalog + default).
  * @property {string} profilesDir      DSH profiles -- each one owns its plugins.
- * @property {string} dshPackage       npm package the version card tracks.
  * @property {string} panelRepo        `owner/repo` the panel's own updates come from.
  * @property {boolean} ccEnabled
  * @property {string} ccHome
@@ -103,14 +102,9 @@ export function resolveConfig(env = process.env) {
     // runs pnpm inside `$DSH_HOME/profiles/<n>`, so that directory is the only
     // place the plugin inventory can be read from.
     profilesDir: path.resolve(env.DSH_PROFILES_DIR || path.join(dshHome, 'profiles')),
-    // The npm package whose version the DSH tab reports and can install. Kept
-    // configurable for the same reason `DSH_WEB_CMD` is: a fork or an internal
-    // mirror publishes under a different name, and the alternative -- editing
-    // this file -- is not something a user of a packaged app can do.
-    dshPackage: String(env.DSH_PANEL_DSH_PACKAGE || '@deepseek-ai/dsh').trim(),
-    // `owner/repo` whose releases the panel's own update check reads. Separate
-    // from the DSH package above because the two updates are unrelated: one
-    // installs an npm package, the other hands an installer to the OS.
+    // `owner/repo` whose releases the panel's own update check reads. There is
+    // deliberately no equivalent for DSH itself: the official desktop app owns
+    // its own version, and the panel no longer installs a global `dsh`.
     panelRepo: String(env.DSH_PANEL_REPO || 'YiShan-X/dsh-control-panel').trim(),
     ccEnabled,
     ccHome,

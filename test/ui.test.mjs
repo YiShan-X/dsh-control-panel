@@ -20,8 +20,8 @@ describe('renderer i18n', () => {
     /*
      * This is a regression guard, not a lint. `t()` falls back to the key name
      * when a translation is missing, so a typo or an unfinished tab renders as
-     * "dshControlUnavailable" in the UI and nothing anywhere fails. That is
-     * exactly how the DSH tab shipped with 21 missing keys.
+     * "puNeverChecked" in the UI and nothing anywhere fails. That is exactly how
+     * the DSH tab once shipped with 21 missing keys.
      */
     const used = [...new Set([...HTML.matchAll(/\bt\('([A-Za-z0-9_]+)'/g)].map((m) => m[1]))];
     assert.ok(used.length > 50, 'expected the renderer to use translation keys');

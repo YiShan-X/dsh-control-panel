@@ -238,46 +238,8 @@
              text-transform: uppercase; letter-spacing: .6px; }
 
   /* ------------------------------------------------------------------ */
-  /* Models tab: card grid + modal                                      */
+  /* Card grid + modal                                                  */
   /* ------------------------------------------------------------------ */
-
-  /* Stats overview at the top of the Models tab. One row, three cells,
-     each a small filled rectangle with a label and a value. */
-  .stats-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .stat {
-    padding: 12px 14px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .stat .label {
-    font-size: 11px;
-    color: var(--fg-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-  }
-  .stat .value {
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--fg);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .stat .value code {
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--fg-dim);
-    font-weight: 500;
-  }
 
   /* Card grid: a responsive grid of model cards. The list view the rest
      of the panel uses is fine for skills/MCP, but a model catalog wants
@@ -287,20 +249,6 @@
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 10px;
   }
-
-  /* Status dot: small filled circle, used to show "this is the active
-     default" at a glance without dominating the card. */
-  .status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--off);
-    flex-shrink: 0;
-  }
-  .status-dot.on { background: var(--on); box-shadow: 0 0 0 3px rgba(53, 192, 122, 0.15); }
-  .status-dot.warn { background: var(--warn); }
-  .status-dot.err { background: var(--err); }
 
   /* Version card. The installed version is the headline and the badge is the
      one fact the user opened the tab for ("can I update?"), so both are larger
@@ -320,7 +268,6 @@
     background: var(--panel-2); border: 1px solid var(--line);
     border-radius: 6px; padding: 8px;
   }
-  .ver-older { color: var(--fg-faint); font-size: 11.5px; }
 
   /* Empty state inside a card body. */
   .empty-card {
@@ -474,26 +421,6 @@
     color: var(--fg);
   }
 
-  /* Page header: title on the left, a single primary action on the right.
-     Used at the top of the Models tab. */
-  .page-header {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-  .page-header h1 {
-    font-size: 20px;
-    font-weight: 600;
-    margin: 0 0 2px;
-    color: var(--fg);
-    letter-spacing: 0;
-  }
-  .page-header button {
-    flex-shrink: 0;
-  }
-
   /* Provider card: a stacked group, one per provider. Header row carries the
      name, status dot, edit / delete actions. Body is a list of the models
      under this provider, each row compact. */
@@ -640,7 +567,6 @@
     <button class="tab active" data-tab="skills">Skills <span class="n" id="nSkills"></span></button>
     <button class="tab" data-tab="mcp">MCP <span class="n" id="nMcp"></span></button>
     <button class="tab" data-tab="plugins"><span id="tabPlugins"></span> <span class="n" id="nPlugins"></span></button>
-    <button class="tab" data-tab="dsh" id="tabDsh">DSH</button>
     <button class="tab" data-tab="about" id="tabAbout"></button>
   </div>
 </header>
@@ -670,79 +596,6 @@
       <input type="search" id="qm" />
     </div>
     <div class="list" id="mcpList"></div>
-  </section>
-
-  <section id="view-dsh" style="display:none">
-    <div class="page-header">
-      <div>
-        <h1 id="dshPageTitle">DSH 服务</h1>
-        <div class="form-hint" id="dshPageHint">DSH web 进程控制。Skills / MCP 改动后也可在此重启。</div>
-      </div>
-    </div>
-
-    <div class="stats-row">
-      <div class="stat">
-        <div class="label" id="dshStatusLabel">状态</div>
-        <div class="value">
-          <span class="status-dot" id="dshStatusDot"></span>
-          <span id="dshStatusText">—</span>
-        </div>
-      </div>
-      <div class="stat">
-        <div class="label" id="dshPidLabel">PID</div>
-        <div class="value" id="dshPid">—</div>
-      </div>
-      <div class="stat">
-        <div class="label" id="dshUptimeLabel">已运行</div>
-        <div class="value" id="dshUptime">—</div>
-      </div>
-      <div class="stat">
-        <div class="label" id="dshStartedAtLabel">启动时间</div>
-        <div class="value" id="dshStartedAt">—</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2 id="dshControlTitle">控制</h2>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
-        <button id="dshStartBtn" class="primary">Start dsh web</button>
-        <button id="dshStopBtn">Stop</button>
-        <button id="dshRestartBtn">Restart</button>
-      </div>
-      <div class="form-hint" id="dshControlHint" style="margin-top:8px"></div>
-      <div class="form-hint warn" id="dshControlWarn" style="margin-top:4px"></div>
-    </div>
-
-    <div class="card" id="verCard">
-      <h2 id="verTitle">DSH 版本</h2>
-      <div class="ver-head">
-        <span class="ver-num" id="verInstalled">—</span>
-        <span class="ver-badge" id="verBadge"></span>
-      </div>
-      <table class="paths" id="verTable"></table>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
-        <button id="verCheckBtn" class="mini"></button>
-        <button id="verRestartBtn" class="primary mini" style="display:none"></button>
-      </div>
-      <div class="form-hint" id="verHint" style="margin-top:8px"></div>
-      <pre class="ver-output" id="verOutput" style="display:none"></pre>
-    </div>
-
-    <div class="card" id="dshErrorCard" style="display:none">
-      <h2 id="dshErrorTitle">最近错误</h2>
-      <pre id="dshLastError" style="margin:0; white-space:pre-wrap; font-size:12.5px"></pre>
-    </div>
-
-    <div class="card">
-      <h2 id="dshCmdlineTitle">命令行</h2>
-      <pre id="dshCmdline" style="margin:0; white-space:pre-wrap; font-size:12.5px; color:var(--fg-dim)">—</pre>
-      <div class="form-hint" id="dshStartCmd" style="margin-top:6px"></div>
-    </div>
-
-    <div class="card">
-      <h2 id="dshRuntimeTitle">运行时</h2>
-      <table class="paths" id="dshRuntimeTable"></table>
-    </div>
   </section>
 
   <section id="view-plugins" style="display:none">
@@ -809,11 +662,11 @@ const I18N = {
     pluginsBannerTitle: 'Uninstall only — installing is not offered here.',
     pluginsBannerBody: (p) => `A DSH plugin is an npm dependency of a profile (<code>${p}</code>).
       Uninstalling runs <code>dsh plugin --profile &lt;name&gt; remove &lt;pkg&gt;</code> — the same command you would
-      type by hand — so no lockfile is left out of sync. A running <code>dsh web</code> keeps the plugin loaded until
+      type by hand — so no lockfile is left out of sync. A running DSH keeps the plugin loaded until
       it restarts.`,
-    pluginRestartTitle: 'A plugin changed, but the running <code>dsh web</code> has not restarted yet.',
-    pluginRestartBody: (a, b) => `Profile manifest last modified ${a} · dsh web started ${b}.<br>
-      Restart <code>dsh web</code> from the DSH tab to apply it.`,
+    pluginRestartTitle: 'A plugin changed, but the running DSH has not restarted yet.',
+    pluginRestartBody: (a, b) => `Profile manifest last modified ${a} · DSH service started ${b}.<br>
+      Quit and reopen DSH to apply it.`,
     searchPlugins: 'Search plugins…',
     noPlugins: 'No plugins found',
     noPluginProfile: 'No DSH profile with a package.json was found.',
@@ -828,87 +681,8 @@ const I18N = {
     plNoLauncher: 'dsh was not found on PATH, so nothing can be uninstalled from here. Point DSH_WEB_CMD at the launcher if DSH lives elsewhere.',
     plConfirm: (profile, name) => `Uninstall ${name} from the "${profile}" profile?\n\nThis runs pnpm inside the profile directory. It cannot be undone from this panel.`,
     plDone: (name) => `${name} uninstalled.`,
-    plRestartHint: 'Restart dsh web on the DSH tab for it to take effect.',
+    plRestartHint: 'Restart DSH for it to take effect.',
     plFailed: (m) => `Uninstall failed: ${m}`,
-    dshPageTitle: 'DSH service',
-    dshPageHint: 'Control the dsh web process. Skills and MCP changes can be applied by restarting it from here.',
-    dshStartBtn: 'Start dsh web',
-    dshStopBtn: 'Stop',
-    dshRestartBtn: 'Restart',
-    dshStatusLabel: 'Status',
-    dshPidLabel: 'PID',
-    dshUptimeLabel: 'Uptime',
-    dshStartedAtLabel: 'Started',
-    dshControlTitle: 'Control',
-    dshErrorTitle: 'Last start error',
-    dshCmdlineTitle: 'Command line',
-    dshRuntimeTitle: 'Runtime',
-    dshRunning: 'running',
-    dshStopped: 'not running',
-    dshUnknown: 'unknown',
-    dshProbeDisabled: 'not probed (DSH_PANEL_PROBE_WEB=0)',
-    dshNotFound: 'No dsh web process was found by the probe. If it is running under a different executable name, set DSH_WEB_CMD so the panel can start it.',
-    dshControlUnavailable: 'This host cannot start, stop or restart dsh web. Launch the desktop app, or run "node src/cli.mjs" yourself (DSH_PANEL_NO_CONTROL=1 disables it).',
-    dshControlRunningHint: 'Starting is disabled while the service runs. Stop or restart it instead.',
-    dshControlStoppedHint: 'The panel will start it with the command shown below.',
-    dshRestartWarning: 'Restarting dsh web disconnects this page and interrupts any running AI session. Reopen the panel afterwards.',
-    dshStartCommand: (c, s) => `Start command: ${c} (${s})`,
-    dshCmdSourceDefault: 'built-in default',
-    dshCommandSourceEnv: 'from DSH_WEB_CMD',
-    dshDetected: 'detected process',
-    dshStarted: 'dsh web started.',
-    dshStartFailed: (m) => `Start failed: ${m}`,
-    dshStartNotAlive: (m) => `dsh web did not come up: ${m || 'no stderr output'}`,
-    dshStopConfirm: 'Stop dsh web? Every AI session using it will be interrupted.',
-    dshStopFailed: (m) => `Stop failed: ${m}`,
-    dshStopDone: 'dsh web stopped.',
-    dshRestartConfirm: 'Restart dsh web? This briefly interrupts the current AI session.',
-    dshRestarted: 'dsh web restarted.',
-    dshRestartFellBack: (c) => `The command line that was running (${c}) no longer resolves on this machine, so dsh web was restarted with the panel's own start command instead. Check the port and flags it needs.`,
-    dshRestartFailed: (m) => `Restart failed: ${m}`,
-    dshRestartNotAlive: (m) => `dsh web was stopped but did not come back up: ${m || 'no stderr output'}`,
-    dshNotProbed: 'Status probing is off, so the panel cannot tell whether dsh web is running.',
-    dshDialogNote: 'The confirmation dialogs are drawn by the OS, so they follow the system language rather than this page.',
-    dshUptimeDays: (d, h) => `${d}d ${h}h`,
-    dshUptimeHours: (h, m) => `${h}h ${m}m`,
-    dshUptimeMinutes: (m, s) => `${m}m ${s}s`,
-    dshUptimeSeconds: (s) => `${s}s`,
-    dshProbeMs: (n) => `Process probe took ${n} ms (cached up to 15 s).`,
-    dshCpu: (n) => `CPU ${n}`,
-    verTitle: 'DSH version',
-    verPackage: 'Package',
-    verInstalled: 'Installed',
-    verLocation: 'Installed at',
-    verNotDetected: 'not detected',
-    verUpToDate: 'up to date',
-    verAvailable: (v) => `update available · ${v}`,
-    verUnknown: 'not checked',
-    verCheck: 'Check for updates',
-    verChecking: 'Checking…',
-    verNeverChecked: 'The registry has not been queried yet. It is only contacted when you ask, so the panel never waits on the network to start.',
-    verCheckedAt: (t, r) => `Checked ${t}${r ? ` · answered by <code>${r}</code>` : ''}`,
-    verSourceDsh: (c) => `read from <code>${c}</code>`,
-    verSourceManifest: 'read from the installed package.json',
-    verSourceMissing: 'no DSH installation was found',
-    verCheckError: (m) => `Could not reach the registry: ${m}`,
-    verNoNpm: 'npm was not found on PATH, so the registry cannot be queried and no version can be installed from here.',
-    verChannel: 'Channel',
-    verVersion: 'Version',
-    verPublished: 'Published',
-    verCurrent: 'current',
-    verUpdateTo: (v) => `Update to ${v}`,
-    verSwitchTo: (v) => `Switch to ${v}`,
-    verDowngrade: 'older',
-    verConfirm: (a, b) => `Install DSH ${a} over ${b}?\n\nThis runs a global npm install and rewrites the DSH installation every profile shares. A running dsh web keeps the code it started with until it is restarted.`,
-    verConfirmReinstall: (a) => `Reinstall DSH ${a}?\n\nThis runs a global npm install.`,
-    verWorking: (v) => `Installing ${v}… this can take a minute.`,
-    verDone: (a, b) => `DSH updated ${a} → ${b}.`,
-    verAlreadyThere: (v) => `DSH ${v} was already installed; nothing changed.`,
-    verFailed: (m) => `Update failed: ${m}`,
-    verNotReached: (t, o) => `npm reported success, but the dsh on PATH still reports ${o} instead of ${t}. Another installation is probably earlier on PATH.`,
-    verRestartHint: 'Restart dsh web for the new version to take effect.',
-    verRestartNow: 'Restart dsh web now',
-    verOutput: 'npm output',
     puTitle: 'Panel version',
     puSource: 'Install type',
     puSourceApp: 'installed app',
@@ -938,15 +712,11 @@ const I18N = {
     skillsBannerBody: (p) => `DSH's skill provider watches <code>${p}</code>; adding or removing a
       link there is reflected in the catalog on the very next request. Turning one off reclaims its
       description cost on every request.`,
-    mcpBannerTitle: 'MCP changes need a <code>dsh web</code> restart.',
+    mcpBannerTitle: 'MCP changes need a DSH restart.',
     mcpBannerBody: 'MCP servers are assembled once at startup and are not hot-reloaded.',
-    restartBannerTitle: 'The MCP composition changed, but the running <code>dsh web</code> has not restarted yet.',
-    restartBannerBody: (a, b) => `Patch last modified ${a} · dsh web started ${b}.<br>
-      Restart by quitting the current <code>dsh web</code> and running it again.`,
-    restartNow: 'Restart dsh web now',
-    restartDone: 'dsh web restarted.',
-    restartFailed: (m) => `Restart failed: ${m}`,
-    restartConfirm: 'Restart dsh web? It will briefly interrupt the current AI session.',
+    restartBannerTitle: 'The MCP composition changed, but DSH has not restarted since.',
+    restartBannerBody: (a, b) => `Patch last modified ${a} · DSH service started ${b}.<br>
+      Quit and reopen DSH to apply it.`,
     invalidTitle: (n) => `${n} skill${n === 1 ? '' : 's'} will be silently dropped by DSH`,
     invalidBody: 'Missing or invalid frontmatter, or a non-kebab-case name. These never reach the catalog:',
     realDirsTitle: (n) => `${n} real director${n === 1 ? 'y' : 'ies'} (not links) in the DSH skill root`,
@@ -1027,10 +797,10 @@ const I18N = {
     pluginsBannerTitle: '这里只做卸载，不提供安装。',
     pluginsBannerBody: (p) => `DSH 插件是某个 profile 的 npm 依赖（<code>${p}</code>）。
       卸载执行的是 <code>dsh plugin --profile &lt;name&gt; remove &lt;pkg&gt;</code>，也就是你手动会敲的那条命令，
-      因此不会留下与实际依赖不一致的 lockfile。运行中的 <code>dsh web</code> 要重启后才会真正卸载掉它。`,
-    pluginRestartTitle: '插件已变更，但运行中的 <code>dsh web</code> 还没重启，改动尚未生效。',
-    pluginRestartBody: (a, b) => `profile 清单最后修改：${a} · dsh web 启动：${b}<br>
-      请到 DSH 标签页重启 <code>dsh web</code> 使其生效。`,
+      因此不会留下与实际依赖不一致的 lockfile。运行中的 DSH 要重启后才会真正卸载掉它。`,
+    pluginRestartTitle: '插件已变更，但运行中的 DSH 还没重启，改动尚未生效。',
+    pluginRestartBody: (a, b) => `profile 清单最后修改：${a} · DSH 服务启动：${b}<br>
+      退出并重新打开 DSH 后才会生效。`,
     searchPlugins: '搜索插件…',
     noPlugins: '没有匹配的插件',
     noPluginProfile: '没有找到带 package.json 的 DSH profile。',
@@ -1045,87 +815,8 @@ const I18N = {
     plNoLauncher: 'PATH 上找不到 dsh，因此这里无法执行卸载。如果 DSH 装在别处，请把 DSH_WEB_CMD 指向它的启动器。',
     plConfirm: (profile, name) => `确定要把 ${name} 从 "${profile}" 配置档卸载吗？\n\n这会在该 profile 目录里执行 pnpm，且无法从本面板恢复。`,
     plDone: (name) => `${name} 已卸载。`,
-    plRestartHint: '请到 DSH 标签页重启 dsh web 使其生效。',
+    plRestartHint: '重启 DSH 后才会生效。',
     plFailed: (m) => `卸载失败：${m}`,
-    dshPageTitle: 'DSH 服务',
-    dshPageHint: 'DSH web 进程控制。Skills / MCP 改完可以在这里重启它来生效。',
-    dshStartBtn: '启动 dsh web',
-    dshStopBtn: '停止',
-    dshRestartBtn: '重启',
-    dshStatusLabel: '状态',
-    dshPidLabel: 'PID',
-    dshUptimeLabel: '已运行',
-    dshStartedAtLabel: '启动时间',
-    dshControlTitle: '控制',
-    dshErrorTitle: '最近一次启动错误',
-    dshCmdlineTitle: '命令行',
-    dshRuntimeTitle: '运行时',
-    dshRunning: '运行中',
-    dshStopped: '未运行',
-    dshUnknown: '未知',
-    dshProbeDisabled: '未探测（DSH_PANEL_PROBE_WEB=0）',
-    dshNotFound: '没有探测到 dsh web 进程。如果它是以别的可执行名启动的，请设置 DSH_WEB_CMD，面板才能启动它。',
-    dshControlUnavailable: '当前宿主无法启动 / 停止 / 重启 dsh web。请使用桌面版，或自己执行 "node src/cli.mjs"（设 DSH_PANEL_NO_CONTROL=1 可关闭该能力）。',
-    dshControlRunningHint: '服务运行中，启动按钮不可用；要换一份配置请点停止或重启。',
-    dshControlStoppedHint: '面板会用下面这条命令启动它。',
-    dshRestartWarning: '重启 dsh web 会断开当前页面，并打断正在进行的 AI 会话，之后请重新打开面板。',
-    dshStartCommand: (c, s) => `启动命令：${c}（${s}）`,
-    dshCmdSourceDefault: '内置默认值',
-    dshCommandSourceEnv: '来自 DSH_WEB_CMD',
-    dshDetected: '探测到的进程',
-    dshStarted: 'dsh web 已启动。',
-    dshStartFailed: (m) => `启动失败：${m}`,
-    dshStartNotAlive: (m) => `dsh web 没有起来：${m || '没有 stderr 输出'}`,
-    dshStopConfirm: '确认停止 dsh web？所有使用它的 AI 会话都会被中断。',
-    dshStopFailed: (m) => `停止失败：${m}`,
-    dshStopDone: 'dsh web 已停止。',
-    dshRestartConfirm: '确认重启 dsh web？会短暂打断当前的 AI 会话。',
-    dshRestarted: 'dsh web 已重启。',
-    dshRestartFellBack: (c) => `原来运行中的命令（${c}）在这台机器上已经无法解析，因此改用面板自己的启动命令重启了 dsh web。请确认它需要的端口和参数。`,
-    dshRestartFailed: (m) => `重启失败：${m}`,
-    dshRestartNotAlive: (m) => `dsh web 已停止但没能重新起来：${m || '没有 stderr 输出'}`,
-    dshNotProbed: '状态探测已关闭，面板无法判断 dsh web 是否在运行。',
-    dshDialogNote: '确认弹窗由系统绘制，语言跟随系统而不是本页面。',
-    dshUptimeDays: (d, h) => `${d} 天 ${h} 小时`,
-    dshUptimeHours: (h, m) => `${h} 小时 ${m} 分`,
-    dshUptimeMinutes: (m, s) => `${m} 分 ${s} 秒`,
-    dshUptimeSeconds: (s) => `${s} 秒`,
-    dshProbeMs: (n) => `进程探测耗时 ${n} ms（进程信息最多缓存 15 秒）。`,
-    dshCpu: (n) => `CPU ${n}`,
-    verTitle: 'DSH 版本',
-    verPackage: 'npm 包',
-    verInstalled: '已安装',
-    verLocation: '安装位置',
-    verNotDetected: '未检测到',
-    verUpToDate: '已是最新',
-    verAvailable: (v) => `有新版本 · ${v}`,
-    verUnknown: '尚未检查',
-    verCheck: '检查更新',
-    verChecking: '检查中…',
-    verNeverChecked: '还没有查询过 registry。只有你主动检查时才会联网，所以面板启动不会被网络拖慢。',
-    verCheckedAt: (t, r) => `检查时间 ${t}${r ? ` · 数据来自 <code>${r}</code>` : ''}`,
-    verSourceDsh: (c) => `读取自 <code>${c}</code>`,
-    verSourceManifest: '读取自已安装的 package.json',
-    verSourceMissing: '没有找到 DSH 安装',
-    verCheckError: (m) => `无法访问 registry：${m}`,
-    verNoNpm: 'PATH 里找不到 npm，因此无法查询 registry，也无法从这里安装任何版本。',
-    verChannel: '通道',
-    verVersion: '版本',
-    verPublished: '发布时间',
-    verCurrent: '当前',
-    verUpdateTo: (v) => `更新到 ${v}`,
-    verSwitchTo: (v) => `切换到 ${v}`,
-    verDowngrade: '较早',
-    verConfirm: (a, b) => `把 DSH 从 ${b} 安装为 ${a}？\n\n这会执行一次全局 npm 安装，覆盖所有 profile 共用的那份 DSH。正在运行的 dsh web 会继续使用启动时加载的代码，需要重启才会生效。`,
-    verConfirmReinstall: (a) => `重新安装 DSH ${a}？\n\n这会执行一次全局 npm 安装。`,
-    verWorking: (v) => `正在安装 ${v}… 可能需要一分钟。`,
-    verDone: (a, b) => `DSH 已更新：${a} → ${b}。`,
-    verAlreadyThere: (v) => `DSH ${v} 本来就是已安装版本，没有变化。`,
-    verFailed: (m) => `更新失败：${m}`,
-    verNotReached: (t, o) => `npm 报告成功，但 PATH 里的 dsh 仍然报告 ${o} 而不是 ${t}。多半是 PATH 里还有另一个更靠前的安装。`,
-    verRestartHint: '重启 dsh web 后新版本才会生效。',
-    verRestartNow: '立即重启 dsh web',
-    verOutput: 'npm 输出',
     puTitle: '面板版本',
     puSource: '安装方式',
     puSourceApp: '已安装的应用',
@@ -1154,15 +845,11 @@ const I18N = {
     skillsBannerTitle: 'Skills 改动立即生效，无需重启。',
     skillsBannerBody: (p) => `DSH 的 skill provider 会监听 <code>${p}</code>，加/删软链接即刻反映到 catalog；
       关掉一个 skill 就省掉它每个请求的描述开销。`,
-    mcpBannerTitle: 'MCP 改动必须重启 <code>dsh web</code> 才生效。',
+    mcpBannerTitle: 'MCP 改动必须重启 DSH 才生效。',
     mcpBannerBody: 'MCP 是装配层，启动时只读一次组合，没有热加载。',
-    restartBannerTitle: 'MCP 配置已改，但运行中的 <code>dsh web</code> 还没重启，改动尚未生效。',
-    restartBannerBody: (a, b) => `patch 最后修改：${a} · dsh web 启动：${b}<br>
-      重启方法：先退出当前 <code>dsh web</code>，再重新执行。`,
-    restartNow: '立即重启 dsh web',
-    restartDone: 'dsh web 已重启。',
-    restartFailed: (m) => `重启失败: ${m}`,
-    restartConfirm: '确认重启 dsh web？会短暂打断当前的 AI 会话。',
+    restartBannerTitle: 'MCP 配置已改，但运行中的 DSH 还没重启，改动尚未生效。',
+    restartBannerBody: (a, b) => `patch 最后修改：${a} · DSH 服务启动：${b}<br>
+      退出并重新打开 DSH 后才会生效。`,
     invalidTitle: (n) => `${n} 个 skill 会被 DSH 静默丢弃`,
     invalidBody: '缺 frontmatter、字段不全，或名字不是 kebab-case。它们即使开了也不会进入 catalog：',
     realDirsTitle: (n) => `DSH skill 根目录下有 ${n} 个真实目录（非软链接）`,
@@ -1304,22 +991,13 @@ const $ = (s) => document.querySelector(s);
 const state = {
   skills: [], mcp: [], skillSummary: {}, mcpMeta: {}, paths: {}, ccSwitch: {}, pools: [],
   plugins: [], pluginProfiles: [], pluginsMeta: {},
-  // Which DSH is installed and what is published. Empty until the first fetch,
-  // which `renderVersion` renders as "not checked" rather than as "up to date".
-  dshVersion: {},
-  // The same for the panel's own version, filled from the About tab's check.
+  // Which panel is running and what is published. Empty until the About tab's
+  // check lands, which `renderPanelUpdate` renders as "not checked" rather
+  // than as "up to date".
   panelUpdate: {},
 };
 let tab = 'skills';
 let timer = null;
-/** Set while an update install is running, so the buttons cannot be re-clicked. */
-let versionUpdating = false;
-/** One registry check per page load, and never on the poll path. */
-let versionAutoChecked = false;
-/** Set while a registry check is in flight, so a poll cannot un-disable it. */
-let versionChecking = false;
-/** Kept so the npm output of the last install survives a re-render. */
-let versionOutput = '';
 /** The same three flags for the panel's own update, which is a separate action. */
 let panelChecking = false;
 let panelAutoChecked = false;
@@ -1336,30 +1014,6 @@ const fmtTime = (iso) => {
 };
 
 const num = (n) => Number(n ?? 0).toLocaleString(lang);
-
-/**
- * Human uptime for the DSH tab. Deliberately coarse: "2d 4h" is what a person
- * wants from a service panel, not "2d 4h 11m 37s".
- */
-function fmtUptime(ms) {
-  if (ms == null || !Number.isFinite(ms)) return '—';
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const days = Math.floor(total / 86400);
-  const hours = Math.floor((total % 86400) / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  if (days > 0) return t('dshUptimeDays', num(days), num(hours));
-  if (hours > 0) return t('dshUptimeHours', num(hours), num(mins));
-  if (mins > 0) return t('dshUptimeMinutes', num(mins), num(secs));
-  return t('dshUptimeSeconds', num(secs));
-}
-
-/** Same idea for a CPU-time figure, which is small and unit-less otherwise. */
-function fmtDuration(ms) {
-  if (ms == null || !Number.isFinite(ms)) return '—';
-  if (ms < 1000) return `${num(Math.round(ms))} ms`;
-  return `${num(Math.round(ms / 1000))} s`;
-}
 
 function fmtBytes(n) {
   if (n == null || !Number.isFinite(n)) return '—';
@@ -1412,10 +1066,9 @@ async function openTarget(target) {
  * Fetch `/api/state` and repaint.
  *
  * @param {boolean} showSpinner
- * @param {boolean} [force] Ask the server to re-probe the dsh web process
- *   instead of answering from its cache. An explicit refresh and every DSH
- *   action want this: the cached answer is the one the user is trying to
- *   replace.
+ * @param {boolean} [force] Ask the server to re-probe the running DSH service
+ *   instead of answering from its cache. An explicit refresh wants this: the
+ *   cached answer is the one the user is trying to replace.
  */
 async function load(showSpinner, force) {
   if (showSpinner) $('#refresh').innerHTML = `<span class="spin">◐</span> ${esc(t('refreshBusy'))}`;
@@ -1425,17 +1078,9 @@ async function load(showSpinner, force) {
     render();
     if (timer) clearInterval(timer);
     timer = setInterval(() => load(false), Math.max(5000, state.pollMs || 30000));
-    // Ask the registry once per page load. Deliberately after the first paint
-    // and deliberately not awaited: the version card is useful the moment the
-    // local `dsh --version` lands, and a slow or unreachable registry must not
-    // hold up the rest of the panel.
-    if (!versionAutoChecked) {
-      versionAutoChecked = true;
-      checkForUpdates(false).catch(() => {});
-    }
-    // The same one-shot for the panel's own release feed. They are separate
-    // questions ("is DSH current?" and "is this app current?") with separate
-    // sources, so a failure of one must not suppress the other.
+    // Ask the release feed once per page load. Deliberately after the first
+    // paint and deliberately not awaited: the poll must never wait on the
+    // network.
     if (!panelAutoChecked) {
       panelAutoChecked = true;
       checkPanelUpdate(false).catch(() => {});
@@ -1482,8 +1127,6 @@ function render() {
   renderSkills();
   renderMcp();
   renderPlugins();
-  renderDsh();
-  renderVersion();
   renderPanelUpdate();
   renderAbout();
 
@@ -1512,20 +1155,7 @@ function renderChips() {
   $('#chips').innerHTML = `
     <span class="chip on">${t('skillsChip', s.enabled ?? 0, s.total ?? 0, num(s.enabledTokens ?? 0))}</span>
     <span class="chip on">${t('mcpChip', mcpOn, state.mcp.length)}</span>
-    <span class="chip">${t('pluginsChip', pluginCount)}</span>
-    ${versionChip()}`;
-}
-
-/**
- * The DSH version, as a header chip, so "there is an update" is visible from
- * every tab instead of only the one that happens to hold the version card.
- * Renders nothing at all until a version has actually been read.
- */
-function versionChip() {
-  const v = state.dshVersion || {};
-  if (!v.installed) return '';
-  const arrow = v.updateAvailable ? ` <b>→ ${esc(v.newest.version)}</b>` : '';
-  return `<span class="chip ${v.updateAvailable ? 'warn' : ''}">DSH <b>${esc(v.installed)}</b>${arrow}</span>`;
+    <span class="chip">${t('pluginsChip', pluginCount)}</span>`;
 }
 
 function renderBanners() {
@@ -1533,17 +1163,9 @@ function renderBanners() {
   const meta = state.mcpMeta || {};
 
   if (meta.restartPending) {
-    // The "Restart dsh web now" button is only offered when the running host
-    // actually supports it. CLI mode intentionally does not, so the route
-    // returns 501 and we keep the instruction text as the fallback.
-    const canRestart = Boolean(meta.canRestart);
-    const action = canRestart
-      ? `<div style="margin-top:8px"><button class="primary mini" id="restartNow">${esc(t('restartNow'))}</button></div>`
-      : '';
     banners.push(`<div class="banner"><span>⚠️</span><div>
       <b>${t('restartBannerTitle')}</b><br>
       ${t('restartBannerBody', esc(fmtTime(meta.patchMtime)), esc(fmtTime(meta.dshWebStartedAt)))}
-      ${action}
     </div></div>`);
   }
 
@@ -1741,234 +1363,12 @@ function pluginRow(p) {
 }
 
 /**
- * Render the DSH tab: process status, three controls, the last start error,
- * and the command line the panel would use.
- *
- * Everything here comes from `/api/state.dsh`, so the tab is a thin shell over
- * one source of truth. Two honesty rules matter more than the layout:
- *
- *   - "not running" and "not probed" are different answers. A host with
- *     `DSH_PANEL_PROBE_WEB=0` gets a grey dot and says so, instead of being
- *     told its service is down.
- *   - a control the host cannot perform is disabled *and* explained. A button
- *     that 501s is worse than one that is visibly unavailable.
- */
-function renderDsh() {
-  const dsh = state.dsh || {};
-  const canControl = Boolean(dsh.canStart && dsh.canStop && dsh.canRestart);
-  const probed = dsh.probed !== false;
-
-  $('#dshPageTitle').textContent = t('dshPageTitle');
-  $('#dshPageHint').textContent = t('dshPageHint');
-  $('#dshStatusLabel').textContent = t('dshStatusLabel');
-  $('#dshPidLabel').textContent = t('dshPidLabel');
-  $('#dshUptimeLabel').textContent = t('dshUptimeLabel');
-  $('#dshStartedAtLabel').textContent = t('dshStartedAtLabel');
-  $('#dshControlTitle').textContent = t('dshControlTitle');
-  $('#dshErrorTitle').textContent = t('dshErrorTitle');
-  $('#dshCmdlineTitle').textContent = t('dshCmdlineTitle');
-  $('#dshRuntimeTitle').textContent = t('dshRuntimeTitle');
-
-  // Status: a dot plus a word. `probed === false` is its own state.
-  const dot = $('#dshStatusDot');
-  if (!probed) {
-    dot.className = 'status-dot';
-    $('#dshStatusText').textContent = t('dshProbeDisabled');
-  } else if (dsh.running) {
-    dot.className = 'status-dot on';
-    $('#dshStatusText').textContent = t('dshRunning');
-  } else {
-    dot.className = 'status-dot warn';
-    $('#dshStatusText').textContent = t('dshStopped');
-  }
-
-  $('#dshPid').textContent = dsh.pid != null ? String(dsh.pid) : '—';
-  $('#dshUptime').textContent = fmtUptime(dsh.uptimeMs);
-  $('#dshStartedAt').textContent = dsh.startedAt ? fmtTime(dsh.startedAt) : (dsh.running ? t('dshUnknown') : '—');
-
-  // Command line card: the running process when there is one, otherwise the
-  // command the Start button would run -- both are things the user needs.
-  const startSource = dsh.startCommandSource === 'DSH_WEB_CMD'
-    ? t('dshCommandSourceEnv')
-    : t('dshCmdSourceDefault');
-  $('#dshCmdline').textContent = dsh.cmdline
-    ? `${t('dshDetected')}:\n${dsh.cmdline}`
-    : (dsh.running ? t('dshUnknown') : '—');
-  $('#dshStartCmd').textContent = t('dshStartCommand', dsh.startCommand || 'dsh web', startSource);
-
-  // Buttons. Start is meaningless while the service runs; stop/restart are
-  // meaningless while it does not.
-  const startBtn = $('#dshStartBtn');
-  const stopBtn = $('#dshStopBtn');
-  const restartBtn = $('#dshRestartBtn');
-  startBtn.textContent = t('dshStartBtn');
-  stopBtn.textContent = t('dshStopBtn');
-  restartBtn.textContent = t('dshRestartBtn');
-  if (!canControl) {
-    startBtn.disabled = true;
-    stopBtn.disabled = true;
-    restartBtn.disabled = true;
-    $('#dshControlHint').textContent = t('dshControlUnavailable');
-  } else {
-    const running = Boolean(dsh.running);
-    startBtn.disabled = running;
-    stopBtn.disabled = !running;
-    restartBtn.disabled = !running;
-    $('#dshControlHint').textContent = !probed
-      ? t('dshNotProbed')
-      : (running ? t('dshControlRunningHint') : t('dshControlStoppedHint'));
-  }
-
-  // The restart warning is not decoration: on a panel that was opened from
-  // dsh web, restarting it takes this page down with it. The dialog note is
-  // there because the native confirm() cannot be localised from here.
-  $('#dshControlWarn').textContent = canControl
-    ? `${t('dshRestartWarning')} ${t('dshDialogNote')}`
-    : '';
-
-  // Last-error card. Rendered only when there is an error: a stale card from a
-  // previous attempt is more confusing than no card.
-  const errorCard = $('#dshErrorCard');
-  if (dsh.lastStartError) {
-    errorCard.style.display = '';
-    $('#dshLastError').textContent = dsh.lastStartError;
-  } else {
-    errorCard.style.display = 'none';
-  }
-
-  // Runtime card: what the probe cost, and what it measured. A visible probe
-  // time is how a user can tell a slow poll from a slow machine.
-  const rows = [];
-  if (probed) rows.push(`<tr><td>${esc(t('dshProbeMs', dsh.probeMs ?? 0))}</td><td></td></tr>`);
-  if (dsh.cpuMs != null) rows.push(`<tr><td>${esc(t('dshCpu', fmtDuration(dsh.cpuMs)))}</td><td></td></tr>`);
-  if (dsh.rssBytes != null) rows.push(`<tr><td>${esc(fmtBytes(dsh.rssBytes))}</td><td></td></tr>`);
-  if (!dsh.running && probed && dsh.canStart) {
-    rows.push(`<tr><td colspan="2" style="color:var(--fg-dim)">${esc(t('dshNotFound'))}</td></tr>`);
-  }
-  $('#dshRuntimeTable').innerHTML = rows.join('');
-}
-
-/**
- * The version card.
- *
- * Every branch renders an observation, and "not checked" is a distinct state
- * from "up to date": the registry is only contacted when the user asks (or once
- * per page load), so a panel that has never asked must not imply the installed
- * DSH is current. The same rule explains the two error lines -- a version that
- * could not be read and a registry that could not be reached are different
- * failures and are reported separately.
- */
-function renderVersion() {
-  const v = state.dshVersion || {};
-  const channels = v.channels || [];
-
-  $('#verTitle').textContent = t('verTitle');
-  $('#verInstalled').textContent = v.installed || t('verNotDetected');
-
-  const badge = $('#verBadge');
-  if (v.updateAvailable) {
-    badge.className = 'ver-badge warn';
-    badge.textContent = t('verAvailable', v.newest.version);
-  } else if (v.checkedAt) {
-    badge.className = 'ver-badge on';
-    badge.textContent = t('verUpToDate');
-  } else {
-    badge.className = 'ver-badge';
-    badge.textContent = t('verUnknown');
-  }
-
-  const rows = [];
-  rows.push(`<tr><td>${esc(t('verPackage'))}</td><td><code>${esc(v.packageName || '')}</code></td></tr>`);
-
-  // How the installed version was learned. A version read from the manifest is
-  // not the same evidence as one the command itself printed, so the two are
-  // labelled differently -- claiming "read from dsh --version" for a number that
-  // actually came off disk would misreport exactly when the command is broken,
-  // which is the one case where the distinction matters.
-  let source;
-  if (!v.installed) {
-    source = esc(v.installedError || t('verSourceMissing'));
-  } else if (v.installedSource === 'package.json') {
-    source = esc(t('verSourceManifest'))
-      + (v.installedError ? ` · <span class="warn">${esc(v.installedError)}</span>` : '');
-  } else {
-    source = t('verSourceDsh', esc(v.installedCommand || 'dsh --version'));
-  }
-  rows.push(`<tr><td>${esc(t('verInstalled'))}</td>
-    <td><code>${esc(v.installed || '—')}</code>
-    <div class="form-hint">${source}</div></td></tr>`);
-
-  // Where it is installed. This is the single most useful field when a machine
-  // has two DSH installations and an update "succeeds" without changing the
-  // version on PATH.
-  if (v.packagePath) {
-    rows.push(`<tr><td>${esc(t('verLocation'))}</td>
-      <td><code title="${esc(v.packagePath)}">${esc(short(v.packagePath))}</code></td></tr>`);
-  }
-
-  for (const c of channels) {
-    const when = c.publishedAt ? fmtTime(c.publishedAt) : '—';
-    let action;
-    if (c.current) {
-      action = `<button class="mini" disabled>${esc(t('verCurrent'))}</button>`;
-    } else {
-      // A channel that is behind the installed version is a downgrade, not an
-      // update. It is still offered -- moving off `alpha` back to `latest` is a
-      // legitimate thing to want -- but it is labelled as what it is.
-      const label = c.newer ? t('verUpdateTo', c.version) : t('verSwitchTo', c.version);
-      const cls = c.newer && !versionUpdating ? 'primary mini' : 'mini';
-      action = `<button class="${cls}" data-update="${esc(c.version)}"${versionUpdating ? ' disabled' : ''}>`
-        + `${esc(label)}</button>`;
-      if (!c.newer) action += ` <span class="ver-older">${esc(t('verDowngrade'))}</span>`;
-    }
-    rows.push(`<tr><td>${esc(c.name)}</td>
-      <td><code>${esc(c.version)}</code>
-      <div class="form-hint">${esc(t('verPublished'))} ${esc(when)}</div>
-      <div style="margin-top:6px">${action}</div></td></tr>`);
-  }
-  $('#verTable').innerHTML = rows.join('');
-
-  const check = $('#verCheckBtn');
-  check.textContent = versionUpdating
-    ? t('verWorking', '')
-    : (versionChecking ? t('verChecking') : t('verCheck'));
-  check.disabled = versionChecking || versionUpdating || v.canCheck === false;
-
-  const hint = $('#verHint');
-  if (versionUpdating) {
-    hint.innerHTML = esc(t('verWorking', state.dshVersion?.newest?.version || ''));
-  } else if (v.restartRequired) {
-    // The most actionable state, so it outranks the check bookkeeping below:
-    // the install landed after the service booted, so the new code is on disk
-    // and not in the process.
-    hint.innerHTML = `${esc(t('verRestartHint'))} <span style="color:var(--fg-faint)">${esc(fmtTime(v.lastUpdateAt))}</span>`;
-  } else if (v.checkError) {
-    hint.innerHTML = `<span class="warn">${esc(t('verCheckError', v.checkError))}</span>`;
-  } else if (v.canCheck === false) {
-    hint.textContent = t('verNoNpm');
-  } else if (!v.checkedAt) {
-    hint.textContent = t('verNeverChecked');
-  } else {
-    hint.innerHTML = t('verCheckedAt', esc(fmtTime(v.checkedAt)), esc(v.registry || ''));
-  }
-
-  const out = $('#verOutput');
-  out.style.display = versionOutput ? '' : 'none';
-  out.textContent = versionOutput;
-
-  // Only offered when an install actually landed after the running service
-  // booted; otherwise the panel would nag about a restart that changes nothing.
-  $('#verRestartBtn').style.display = v.restartRequired ? '' : 'none';
-  $('#verRestartBtn').textContent = t('verRestartNow');
-}
-
-/**
  * The panel's own version card, in the About tab.
  *
- * Same honesty rules as the DSH card: "not checked" is its own state, a failed
- * check is reported rather than swallowed, and the install type is stated
- * because a source checkout cannot replace itself -- the card must not offer a
- * button the server will answer 501 for.
+ * "Not checked" is its own state, a failed check is reported rather than
+ * swallowed, and the install type is stated because a source checkout cannot
+ * replace itself -- the card must not offer a button the server will answer 501
+ * for.
  */
 function renderPanelUpdate() {
   const u = state.panelUpdate || {};
@@ -2097,7 +1497,6 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
   $('#view-skills').style.display = tab === 'skills' ? '' : 'none';
   $('#view-mcp').style.display = tab === 'mcp' ? '' : 'none';
   $('#view-plugins').style.display = tab === 'plugins' ? '' : 'none';
-  $('#view-dsh').style.display = tab === 'dsh' ? '' : 'none';
   $('#view-about').style.display = tab === 'about' ? '' : 'none';
 }));
 
@@ -2123,31 +1522,9 @@ document.addEventListener('click', (e) => {
   if (target) openTarget(target);
 });
 
-// "Restart dsh web now" lives in the MCP restart banner. The button is only
-// rendered when the host supports it (see `meta.canRestart`), but double-check
-// the flag here in case the UI is rendered before the state lands.
-document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('#restartNow');
-  if (!btn) return;
-  btn.disabled = true;
-  try {
-    if (!confirm(t('restartConfirm'))) return;
-    const r = await api('/api/restart', {});
-    if (r.killedPid == null && r.newPid == null) {
-      // Nothing was killed and nothing was spawned: dsh web was not running.
-      // That is not an error -- the user may have closed it deliberately --
-      // but the banner will clear only on the next /api/state probe.
-      toast(t('restartDone'));
-    } else {
-      toast(t('restartDone'));
-    }
-    await load(false);
-  } catch (err) {
-    toast(t('restartFailed', err.message));
-  } finally {
-    btn.disabled = false;
-  }
-});
+// "Restart dsh web now" was a button in the MCP restart banner. It is gone with
+// the DSH tab: the official desktop app owns the DSH lifecycle, so the banner
+// instructs the user to restart DSH instead of pretending the panel can.
 
 document.addEventListener('change', async (e) => {
   const el = e.target;
@@ -2170,53 +1547,6 @@ document.addEventListener('change', async (e) => {
     el.checked = !enabled;
     el.disabled = false;
   }
-});
-
-// DSH tab actions.
-//
-// Every handler follows the same shape: disable the button, run the action,
-// force a fresh probe (never trust the cache after a mutation), and report what
-// was *observed* rather than what was attempted. A start whose process never
-// appeared is a failure the user must see, not a success with a silent caveat.
-async function dshAction(kind) {
-  const btn = $(`#dsh${kind[0].toUpperCase()}${kind.slice(1)}Btn`);
-  if (btn) btn.disabled = true;
-  try {
-    const r = await api(`/api/dsh/${kind}`, {});
-    if (r.alive === false && (kind === 'start' || kind === 'restart')) {
-      toast(kind === 'start' ? t('dshStartNotAlive', r.error) : t('dshRestartNotAlive', r.error));
-    } else if (r.commandFellBack) {
-      // The service is up, but not on the command line it was running before.
-      // That can silently move its port, so say it out loud.
-      toast(t('dshRestartFellBack', r.capturedCommand || ''));
-    } else if (r.changed === false && r.note) {
-      toast(r.note);
-    } else if (kind === 'start') {
-      toast(t('dshStarted'));
-    } else if (kind === 'stop') {
-      toast(t('dshStopDone'));
-    } else {
-      toast(t('dshRestarted'));
-    }
-    await load(false, true);
-  } catch (err) {
-    const msg = err.message || '';
-    if (kind === 'start') toast(t('dshStartFailed', msg));
-    else if (kind === 'stop') toast(t('dshStopFailed', msg));
-    else toast(t('dshRestartFailed', msg));
-    // Put the buttons back in a usable state: `load` re-render is the normal
-    // path, but a failed request may have skipped it.
-    await load(false, true).catch(() => {});
-    if (btn) btn.disabled = false;
-  }
-}
-
-$('#dshStartBtn')?.addEventListener('click', () => dshAction('start'));
-$('#dshStopBtn')?.addEventListener('click', () => {
-  if (confirm(t('dshStopConfirm'))) dshAction('stop');
-});
-$('#dshRestartBtn')?.addEventListener('click', () => {
-  if (confirm(t('dshRestartConfirm'))) dshAction('restart');
 });
 
 // (The single-document click handler was previously a router for
@@ -2269,70 +1599,6 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-// Version card.
-//
-// Checking is a network call, so it is never on the poll path: the panel asks
-// once per page load and then only when the button is pressed. Installing is
-// the only action in this app that rewrites files outside DSH's own config, so
-// it is behind a confirm() that names both versions.
-async function checkForUpdates(fresh) {
-  if (versionUpdating) return;
-  versionChecking = true;
-  renderVersion();
-  try {
-    const r = await api(`/api/dsh/release${fresh ? '?fresh=1' : ''}`);
-    if (r.dshVersion) state.dshVersion = r.dshVersion;
-  } catch (err) {
-    toast(t('verFailed', err.message));
-  } finally {
-    versionChecking = false;
-    renderVersion();
-    // The chip carries the same verdict as the badge, so it has to move with it.
-    renderChips();
-  }
-}
-
-async function updateDshTo(version) {
-  if (versionUpdating) return;
-  const v = state.dshVersion || {};
-  const question = v.installed
-    ? t('verConfirm', version, v.installed)
-    : t('verConfirmReinstall', version);
-  if (!confirm(question)) return;
-
-  versionUpdating = true;
-  versionOutput = '';
-  renderVersion();
-  try {
-    const r = await api('/api/dsh/update', { version });
-    if (r.dshVersion) state.dshVersion = r.dshVersion;
-    versionOutput = [r.stdout, r.stderr].filter(Boolean).join('\n').trim();
-
-    // Three distinct outcomes, reported as what was measured. "npm exited 0"
-    // is not one of them: the version has to have actually moved, and if it did
-    // not, the reason (usually another dsh earlier on PATH) is the message.
-    if (!r.reachedTarget) {
-      toast(t('verNotReached', r.target, r.after || '?'));
-    } else if (!r.changed) {
-      toast(t('verAlreadyThere', r.after));
-    } else {
-      toast(t('verDone', r.before, r.after));
-    }
-    if (r.restartRequired) toast(t('verRestartHint'));
-  } catch (err) {
-    toast(t('verFailed', err.message));
-  } finally {
-    versionUpdating = false;
-    renderVersion();
-    renderChips();
-  }
-}
-
-$('#verCheckBtn').addEventListener('click', () => checkForUpdates(true));
-$('#verRestartBtn').addEventListener('click', () => {
-  if (confirm(t('dshRestartConfirm'))) dshAction('restart');
-});
-
 // Panel self-update.
 //
 // Two different actions behind two different buttons, because they cost very
@@ -2382,11 +1648,6 @@ async function runPanelUpdate() {
 
 $('#puCheckBtn').addEventListener('click', () => checkPanelUpdate(true));
 $('#puUpdateBtn').addEventListener('click', () => runPanelUpdate());
-document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-update]');
-  if (!btn || btn.disabled) return;
-  await updateDshTo(btn.dataset.update);
-});
 
 // Paint the toggle glyph immediately rather than waiting for the first fetch to
 // resolve. This must come after `$` is initialised: `applyTheme` reads the

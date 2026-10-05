@@ -1,57 +1,52 @@
 /**
- * DSH web process control: find, probe, start, stop, restart.
+ * DSH web process probe.
  *
- * This module is the single owner of two things the rest of the app depends on:
+ * The panel no longer starts, stops or restarts `dsh web`: that was process
+ * control, and it was removed with the DSH tab when the official DSH desktop
+ * app became the thing people run. What is left is the one observation the
+ * rest of the app still needs:
  *
  *   1. **The process filter.** `isDshWeb` decides what counts as "the running
- *      `dsh web`". Only one copy exists -- `mcp.mjs` imports the probe from
- *      here -- so the MCP restart banner and the DSH tab can never disagree
- *      about whether the service is up.
+ *      `dsh web`". Only one copy exists -- `mcp.mjs` and `plugins.mjs` import
+ *      the probe from here -- so the MCP restart banner and the plugin banner
+ *      can never disagree about whether the service is up.
  *   2. **The boot-time cache.** `dshWebStartedAt` is what tells the user
  *      whether a pending MCP change has actually taken effect. Probing costs a
  *      PowerShell round trip (~0.6-0.8 s on Windows), so the result is cached
- *      and `invalidateDshWebCache()` is called after every mutating action --
- *      including a `kill`/`spawn` performed by someone else.
+ *      and only an explicit `fresh` read re-measures.
  *
- * Honesty rules, in the same spirit as the rest of the codebase:
+ * The other half of the file is the spawnable-executable layer
+ * (`resolveExecutable` and the npm-shim parsing around it), which `plugins.mjs`
+ * uses to run the documented `dsh plugin remove`.
  *
- *   - Nothing here claims success on a non-event. Every lifecycle function
- *     reports what it observed AFTER acting (`alive`, `livePid`), not what it
- *     intended to do.
- *   - A failed spawn keeps a bounded stderr tail so the UI can show *why*
- *     "Start" did nothing instead of a silent no-op.
- *   - Killing is two-stage: polite first, forced after a short grace period,
- *     measured by polling `taskkill`/`kill -0` rather than sleeping blindly.
+ * Honesty rule, in the same spirit as the rest of the codebase: a probe that
+ * cannot run reports "not running", which is the reading callers can act on,
+ * rather than throwing or pretending to know.
  */
 
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { HttpError } from './errors.mjs';
 import { log } from './util.mjs';
 
 /** How long a boot-time probe stays valid during normal polling. */
 export const WEB_START_TTL_MS = 15000;
 
 /**
- * Shortest interval between two consecutive OS probes. A cache that has been
- * invalidated still refuses to re-probe faster than this, so `/api/state`
- * hammered by a browser cannot turn into a PowerShell fork bomb.
+ * Shortest interval between two consecutive OS probes. An explicit `fresh` read
+ * still refuses to re-probe faster than this, so `/api/state` hammered by a
+ * browser cannot turn into a PowerShell fork bomb.
  */
 const PROBE_FLOOR_MS = 250;
-
-/** How long a just-killed process is given to exit on its own. */
-const KILL_GRACE_MS = 800;
-/** Poll cadence while waiting out the grace period. */
-const KILL_POLL_MS = 100;
 
 /**
  * Match a `dsh` + `web` process line and exclude this panel.
  *
  * The exclusion is by name, not by pid: when the panel runs under `dsh web`
- * (a client-plugin embedding) the parent is the service we manage, and we must
- * still see it. `control-panel` only ever appears in *our own* command lines.
+ * (a client-plugin embedding) the parent is the service we are looking at, and
+ * we must still see it. `control-panel` only ever appears in *our own* command
+ * lines.
  */
 export function isDshWeb(cmdline) {
   const s = String(cmdline ?? '');
@@ -205,30 +200,18 @@ function parseCpuTime(text) {
   return Number.isFinite(secs) ? secs * 1000 : null;
 }
 
-/** Is a pid still alive? Cheap on both platforms (no output captured). */
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === 'EPERM'; // exists, just not ours to signal
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Boot-time cache
 // ---------------------------------------------------------------------------
 
 /**
- * The probe cache. Four fields, each with one job:
+ * The probe cache. Three fields, each with one job:
  *
  *   - `at`        when the value was measured (ms). 0 means "never".
  *   - `value`     the measured process, or null for "nothing running".
- *   - `probeMs`   how long that measurement took, for the UI to display.
- *   - `invalidated` set by a mutating action, so the next read re-measures even
- *     though the entry is younger than the TTL. Cleared by the next probe.
+ *   - `probeMs`   how long that measurement took, for diagnostics.
  */
-let cache = { at: 0, value: null, probeMs: 0, invalidated: false };
+let cache = { at: 0, value: null, probeMs: 0 };
 
 /**
  * Read the cache, re-probing when it is due or when the caller insists.
@@ -247,13 +230,13 @@ let cache = { at: 0, value: null, probeMs: 0, invalidated: false };
  */
 function readCache(opts) {
   const age = Date.now() - cache.at;
-  const due = cache.at === 0 || cache.invalidated || age >= WEB_START_TTL_MS;
+  const due = cache.at === 0 || age >= WEB_START_TTL_MS;
   const forced = opts.fresh === true && age >= PROBE_FLOOR_MS;
 
   if (due || forced) {
     const t0 = Date.now();
     const value = findDshWebProcess();
-    cache = { at: Date.now(), value, probeMs: Date.now() - t0, invalidated: false };
+    cache = { at: Date.now(), value, probeMs: Date.now() - t0 };
   }
   return cache.value;
 }
@@ -280,8 +263,12 @@ export function dshWebStartedAt(opts = {}) {
 }
 
 /**
- * The full status the DSH tab renders, in one probe. See `dshWebStartedAt` for
- * the caching rules.
+ * The whole probe snapshot, in one OS call.
+ *
+ * Only `startedAt` has a consumer today (the restart-pending comparison above).
+ * The remaining fields come from the same `Get-CimInstance` / `ps` row, and
+ * they are what makes a bug report diagnosable -- "which process did the probe
+ * actually see?" -- so they are reported rather than discarded.
  *
  * @param {{fresh?: boolean}} [opts]
  * @returns {DshWebStatus}
@@ -317,7 +304,7 @@ export function dshWebStatus(opts = {}) {
  * Peek at the probe cache. Exported for tests and diagnostics only: production
  * code must go through the accessors, which own the re-probe rules.
  *
- * @returns {{at: number, probeMs: number, invalidated: boolean, value: DshWebProcess|null}}
+ * @returns {{at: number, probeMs: number, value: DshWebProcess|null}}
  */
 export function peekDshWebCache() {
   return { ...cache };
@@ -337,7 +324,7 @@ export function peekDshWebCache() {
  * @returns {DshWebStatus}
  */
 export function warmDshWebCache() {
-  cache = { at: 0, value: null, probeMs: 0, invalidated: false };
+  cache = { at: 0, value: null, probeMs: 0 };
   const proc = readCache({ fresh: true });
   const started = proc?.startedAt ? new Date(proc.startedAt).getTime() : NaN;
   return {
@@ -353,103 +340,9 @@ export function warmDshWebCache() {
   };
 }
 
-/**
- * Shrink the current cache entry so the next read re-probes.
- *
- * Called after a mutating action: the old value describes the process we just
- * killed, and the UI must not show it for another 15 s. The measurement itself
- * is kept, so the read that follows the action can display `probeMs` without
- * paying for another fork.
- */
-export function invalidateDshWebCache() {
-  cache = { ...cache, invalidated: true };
-}
-
-/**
- * @deprecated Kept as a thin alias for callers written before `dshWebStatus`;
- * the returned shape is a superset of the old one.
- */
-export function snapshotDshWeb(opts) {
-  return dshWebStatus(opts);
-}
-
 // ---------------------------------------------------------------------------
-// Stop
+// Command-line tokenising
 // ---------------------------------------------------------------------------
-
-/**
- * Kill the running `dsh web` (if any).
- *
- * Polite first (`taskkill` without `/F`, or `SIGTERM`), then forced. The grace
- * period is *observed* rather than slept through: as soon as the pid is gone
- * the force step is skipped, so the common case costs one `taskkill` call
- * instead of a fixed two-second wait.
- *
- * Never throws on the kill itself -- a process that has just exited is a happy
- * path.
- *
- * @returns {Promise<{pid: number, forced: boolean}|null>}
- */
-async function killDshWeb(proc, { alive = isAlive } = {}) {
-  if (!proc) return null;
-  const pid = proc.pid;
-
-  const polite = process.platform === 'win32'
-    ? ['taskkill', '/PID', String(pid)]
-    : ['kill', '-TERM', String(pid)];
-  await run(polite[0], polite.slice(1));
-
-  const deadline = Date.now() + KILL_GRACE_MS;
-  while (Date.now() < deadline) {
-    if (!alive(pid)) return { pid, forced: false };
-    await sleep(KILL_POLL_MS);
-  }
-
-  const force = process.platform === 'win32'
-    ? ['taskkill', '/F', '/T', '/PID', String(pid)]
-    : ['kill', '-KILL', String(pid)];
-  await run(force[0], force.slice(1), { tolerate: ['ESRCH', '128', '1'] });
-  return { pid, forced: true };
-}
-
-/** `execFile` as a promise that swallows the errors we expect to see. */
-function run(cmd, args, { tolerate = [] } = {}) {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { windowsHide: true }, (err) => {
-      if (err && !tolerate.includes(String(err.code))) {
-        log(`WARN ${cmd} ${args.join(' ')} -> ${err.code ?? ''} ${err.message.split('\n')[0]}`);
-      }
-      resolve();
-    });
-  });
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// ---------------------------------------------------------------------------
-// Start / respawn
-// ---------------------------------------------------------------------------
-
-/** Where the start command came from, for the UI to explain itself. */
-export function startCommandInfo() {
-  const override = String(process.env.DSH_WEB_CMD ?? '').trim();
-  return override
-    ? { command: override, source: 'DSH_WEB_CMD' }
-    : { command: 'dsh web', source: 'default' };
-}
-
-/**
- * The last error message captured from a failed start. The UI shows it inline
- * so the user knows why "Start" silently failed.
- */
-let lastStartError = null;
-export function getLastStartError() {
-  return lastStartError;
-}
-function setLastStartError(msg) {
-  lastStartError = msg || null;
-  if (msg) log(`WARN start dsh web: ${msg}`);
-}
 
 /**
  * Split a Windows / POSIX command line into argv tokens, handling double and
@@ -465,8 +358,8 @@ function setLastStartError(msg) {
  * Quoted and unquoted text run together without whitespace join into one
  * token, matching how `cmd` and `/bin/sh` tokenise `"foo"bar` as `foobar`.
  *
- * Exported for unit tests; production code only calls it through
- * `spawnDshWeb` below.
+ * Exported for unit tests; `plugins.mjs` uses it to read the launcher out of
+ * `DSH_WEB_CMD` without going through a shell.
  */
 export function tokenizeCmdline(s) {
   const tokens = [];
@@ -735,258 +628,4 @@ export function resolveExecutable(name) {
 
   executableCache.set(bare, resolved);
   return resolved;
-}
-
-/**
- * Decide what to launch for a start or a restart.
- *
- * The command line captured from a running process is a snapshot of an earlier
- * session, and it can be stale: a machine that has since switched Node version
- * managers still reports the *old* absolute `node.exe`. So before replaying a
- * captured command the executable is resolved; when it is gone, the panel falls
- * back to its own start command and says so, rather than failing with an error
- * the user cannot act on.
- *
- * @param {string|null} captured Command line copied from the running process.
- * @returns {{command: string, source: string, fellBack: boolean, captured: string|null}}
- */
-export function resolveSpawnSpec(captured) {
-  const fallback = startCommandInfo();
-  const trimmed = String(captured ?? '').trim();
-  if (!trimmed) return { ...fallback, fellBack: false, captured: null };
-
-  const tokens = tokenizeCmdline(trimmed);
-  if (tokens.length === 0) return { ...fallback, fellBack: false, captured: trimmed };
-  if (!resolveExecutable(tokens[0])) {
-    log(`WARN captured command ${tokens[0]} no longer resolves; using "${fallback.command}" instead`);
-    return { ...fallback, fellBack: true, captured: trimmed };
-  }
-  return { command: trimmed, source: 'reused', fellBack: false, captured: trimmed };
-}
-
-/**
- * Launch a command line detached.
- *
- * Resolves once the child has actually started or failed, so the caller can
- * report a spawn failure instead of guessing from a timer. stderr is captured
- * into a bounded ring buffer so a failed launch leaves a breadcrumb in the
- * panel log *and* in the DSH tab.
- *
- * Exported so the launch path itself can be exercised (and its "does a console
- * window appear?" behaviour measured) without going through the HTTP layer.
- *
- * @param {string} cmdline
- * @returns {Promise<{pid: number|null, error: string|null, spec: {command: string, args: string[], wrapped: boolean}}>}
- */
-export function launchDshWeb(cmdline) {
-  const tokens = tokenizeCmdline(String(cmdline ?? ''));
-  if (tokens.length === 0) {
-    throw new HttpError(500, 'could not parse dsh web command line for respawn (empty)');
-  }
-
-  // `dsh` is a `.cmd` shim on Windows; spawning it directly is the ENOENT this
-  // whole resolution dance exists to avoid.
-  const resolved = resolveExecutable(tokens[0]) ?? tokens[0];
-
-  // Prefer running the shim's own node command: `cmd /c` would work, but it
-  // hands the console application a visible console window that stays open for
-  // as long as the service runs. Falling back to the wrapper keeps a shim this
-  // parser does not understand working, just noisily.
-  const unwrapped = unwrapNpmShim(resolved);
-  const spec = unwrapped
-    ? { command: unwrapped.command, args: [...unwrapped.prefixArgs, ...tokens.slice(1)], wrapped: false }
-    : shellShimSpec(resolved, tokens.slice(1));
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let child;
-    try {
-      child = spawn(spec.command, spec.args, {
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-        env: process.env,
-      });
-    } catch (err) {
-      setLastStartError(`${tokens[0]} could not be launched: ${err.message}`);
-      reject(err);
-      return;
-    }
-
-    let stderrTail = '';
-    if (child.stderr) {
-      child.stderr.on('data', (chunk) => {
-        stderrTail = (stderrTail + chunk.toString()).slice(-2000);
-      });
-      // The pipe can close under us when the child exits immediately.
-      child.stderr.on('error', () => { /* nothing useful to report */ });
-    }
-
-    child.once('spawn', () => {
-      settled = true;
-      resolve({ pid: child.pid ?? null, error: null, spec });
-    });
-    child.once('error', (err) => {
-      const message = `${tokens[0]} could not be launched: ${err.message}`;
-      setLastStartError(message);
-      if (!settled) {
-        settled = true;
-        reject(new Error(message));
-      }
-    });
-    child.on('exit', (code) => {
-      if (code !== null && code !== 0) {
-        setLastStartError(`dsh web exited with code ${code}: ${stderrTail.slice(-500) || '(no stderr)'}`);
-      }
-    });
-    child.unref();
-  });
-}
-
-/**
- * Start `dsh web` from scratch.
- *
- * If the service is already running this is a no-op that reports the existing
- * pid -- never a second copy. Spawning is asynchronous by nature, so the result
- * is resolved only after the new process has had a chance to claim its port and
- * appear in the process table; `alive` tells the caller whether it actually
- * came up.
- *
- * @param {{find?: () => DshWebProcess|null, spawn?: (cmd: string) => Promise<{pid: number|null, error: string|null}>|[number|null],
- *          settleMs?: number, alive?: (pid: number) => boolean}} [opts] Test seams.
- */
-export async function startDshWeb(opts = {}) {
-  const find = opts.find ?? findDshWebProcess;
-  const spawnFn = opts.spawn ?? launchDshWeb;
-  const settleMs = Number.isFinite(opts.settleMs) ? opts.settleMs : 1500;
-
-  setLastStartError(null);
-  const existing = find();
-  if (existing) {
-    return {
-      changed: false,
-      note: 'dsh web is already running',
-      existingPid: existing.pid,
-      alive: true,
-      livePid: existing.pid,
-    };
-  }
-
-  const { command, source } = startCommandInfo();
-  const tokens = tokenizeCmdline(command);
-  if (tokens.length === 0) {
-    setLastStartError('start command is empty');
-    throw new HttpError(400, 'start command is empty');
-  }
-
-  // Resolve the executable *before* spawning, so a command that is not on PATH
-  // fails with a sentence instead of a bare ENOENT. `dsh` on Windows is a
-  // `dsh.cmd` shim, and only the resolved path can be spawned at all.
-  const resolved = resolveExecutable(tokens[0]);
-  if (!resolved) {
-    const message = `${tokens[0]} was not found on PATH`
-      + (source === 'default' ? '; set DSH_WEB_CMD to the command that starts dsh web' : '');
-    setLastStartError(message);
-    throw new HttpError(500, message);
-  }
-
-  let pid = null;
-  try {
-    const result = await spawnFn(command);
-    pid = typeof result === 'number' ? result : result?.pid ?? null;
-  } catch (err) {
-    setLastStartError(err.message);
-    throw new HttpError(500, `failed to spawn dsh web: ${err.message}`);
-  }
-
-  await sleep(settleMs);
-  const live = find();
-  invalidateDshWebCache();
-  return {
-    changed: true,
-    newPid: pid,
-    startedCmd: command,
-    commandSource: source,
-    alive: live != null,
-    livePid: live ? live.pid : null,
-    error: live ? null : lastStartError,
-  };
-}
-
-/**
- * Stop the running `dsh web`. No-op when nothing is running.
- *
- * @param {{find?: () => DshWebProcess|null, alive?: (pid: number) => boolean}} [opts]
- */
-export async function stopDshWeb(opts = {}) {
-  const find = opts.find ?? findDshWebProcess;
-  const proc = find();
-  invalidateDshWebCache();
-  if (!proc) return { changed: false, note: 'dsh web is not running' };
-  const killed = await killDshWeb(proc, { alive: opts.alive ?? isAlive });
-  invalidateDshWebCache();
-  return {
-    changed: true,
-    killedPid: killed?.pid ?? null,
-    forced: killed?.forced ?? false,
-  };
-}
-
-/**
- * Restart `dsh web`: stop what is running, wait for the port to free, relaunch
- * with the command line that was actually in use.
- *
- * The cmdline is reused verbatim (tokenised, never through a shell) so a
- * `dsh web --port 3080` keeps its port. When nothing was running there is
- * nothing to copy, so the restart degrades into a plain start.
- *
- * @param {{find?: () => DshWebProcess|null, spawn?: (cmd: string) => Promise<{pid: number|null, error: string|null}>|[number|null],
- *          alive?: (pid: number) => boolean, settleMs?: number}} [opts]
- */
-export async function restartDshWeb(opts = {}) {
-  const find = opts.find ?? findDshWebProcess;
-  const spawnFn = opts.spawn ?? launchDshWeb;
-  const settleMs = Number.isFinite(opts.settleMs) ? opts.settleMs : 800;
-
-  setLastStartError(null);
-  const proc = find();
-  if (!proc) {
-    const started = await startDshWeb(opts);
-    return { changed: started.changed, killedPid: null, newPid: started.newPid ?? null, ...started };
-  }
-
-  const killed = await killDshWeb(proc, { alive: opts.alive ?? isAlive });
-  // The new process needs the previous one to release its port. Give the OS a
-  // moment, then hand off to the same "did it actually come up?" check the
-  // start path uses.
-  await sleep(settleMs);
-
-  const spec = resolveSpawnSpec(proc.cmdline);
-  let newPid = null;
-  let spawnError = null;
-  try {
-    const result = await spawnFn(spec.command);
-    newPid = typeof result === 'number' ? result : result?.pid ?? null;
-  } catch (err) {
-    spawnError = err.message;
-    log(`WARN restart: respawn failed: ${err.message}`);
-  }
-
-  invalidateDshWebCache();
-  await sleep(Math.max(settleMs, 600));
-  const live = find();
-  invalidateDshWebCache();
-
-  return {
-    changed: true,
-    killedPid: killed?.pid ?? null,
-    forced: killed?.forced ?? false,
-    newPid,
-    alive: live != null,
-    livePid: live ? live.pid : null,
-    restartCommand: spec.command,
-    capturedCommand: spec.captured,
-    commandFellBack: spec.fellBack,
-    error: live ? null : (spawnError ?? lastStartError),
-  };
 }

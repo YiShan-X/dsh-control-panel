@@ -10,17 +10,9 @@ import fs from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { HttpError } from './errors.mjs';
-import {
-  dshWebStatus,
-  getLastStartError,
-  restartDshWeb,
-  startCommandInfo,
-  startDshWeb,
-  stopDshWeb,
-} from './dsh.mjs';
+import { dshWebStatus } from './dsh.mjs';
 import { buildMcpState, setMcpEnabled } from './mcp.mjs';
 import { buildPluginState, removePlugin, resolveDshLauncher } from './plugins.mjs';
-import { buildVersionState, updateDsh } from './dshVersion.mjs';
 import { buildPanelUpdateState, downloadPanelUpdate } from './panelUpdate.mjs';
 import { buildSkillState, disableSkill, enableSkill } from './skills.mjs';
 import { log } from './util.mjs';
@@ -54,48 +46,14 @@ async function readBody(req) {
 }
 
 /**
- * @typedef {object} DshControl
- * @property {() => import('./dsh.mjs').DshWebStatus} status   Current status snapshot.
- * @property {() => Promise<any>} start
- * @property {() => Promise<any>} stop
- * @property {() => Promise<any>} restart
- */
-
-/**
  * @typedef {object} PanelServerOptions
  * @property {string} publicDir           Directory holding index.html.
  * @property {string} [version]           Version string shown in the UI footer.
  * @property {(p: string) => any} [openPath]  Hook for "reveal in file manager".
- * @property {() => Promise<any>} [restartHook] Optional "restart dsh web" action.
- * @property {DshControl} [dshControl]    Process control for the DSH tab. Without
- *   it every `/api/dsh/*` route answers 501 and the UI shows the buttons
- *   disabled with a reason -- a host that cannot manage a process must never
- *   pretend it can.
  * @property {boolean} [packaged]         Whether this host is an installed app.
  *   Only a packaged host can replace itself, so a source checkout reports that
  *   instead of offering a download it cannot use.
  */
-
-/** The control bundle a host gets when it wires nothing up. */
-const NO_DSH_CONTROL = null;
-
-/**
- * What the status looks like when the host was told not to probe at all
- * (`DSH_PANEL_PROBE_WEB=0`). `probed: false` is the honest part: "unknown" is
- * not the same answer as "not running", and the UI says so.
- * @type {import('./dsh.mjs').DshWebStatus & {probed: boolean}}
- */
-const NOT_PROBED = {
-  running: false,
-  pid: null,
-  cmdline: null,
-  startedAt: null,
-  uptimeMs: null,
-  cpuMs: null,
-  rssBytes: null,
-  probeMs: 0,
-  probed: false,
-};
 
 /**
  * @param {import('./config.mjs').PanelConfig} config
@@ -104,8 +62,6 @@ const NOT_PROBED = {
 export function createPanelServer(config, options) {
   const publicDir = path.resolve(options.publicDir);
   const version = options.version ?? '0.0.0';
-  const dshControl = options.dshControl ?? NO_DSH_CONTROL;
-  const canControlDsh = Boolean(dshControl);
 
   function serveStatic(res, urlPath) {
     const rel = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
@@ -125,55 +81,39 @@ export function createPanelServer(config, options) {
   }
 
   /**
-   * Build the whole payload the UI renders from.
-   *
-   * @param {{force?: boolean}} [opts] `force` bypasses the process-probe cache,
-   *   which is what the refresh button and every DSH action want: the user asked
-   *   a question, so the answer must be observed now, not up to 15 s ago.
-   */
-  /**
-   * Read the status the host is able to report.
+   * When the running `dsh web` booted, or null when nothing is running -- and
+   * also when the host was told not to probe at all (`DSH_PANEL_PROBE_WEB=0`).
+   * Both read as "no boot time to compare against", which is the honest answer
+   * in each case: the restart banners stay quiet rather than guessing.
    *
    * @param {{fresh?: boolean}} [opts]
-   * @returns {import('./dsh.mjs').DshWebStatus}
+   * @returns {string|null}
    */
-  function readDshStatus(opts = {}) {
-    if (dshControl) return dshControl.status(opts);
-    if (config.probeWeb === false) return NOT_PROBED;
-    return dshWebStatus(opts);
+  function readDshStartedAt(opts = {}) {
+    if (config.probeWeb === false) return null;
+    return dshWebStatus(opts).startedAt;
   }
 
   async function buildState(opts = {}) {
     const fresh = opts.force === true;
-    const dsh = readDshStatus({ fresh });
+    // One probe per request, reused by the MCP and plugin restart comparisons
+    // below: one OS call, not three.
+    const dshWebStartedAt = readDshStartedAt({ fresh });
     const skills = await buildSkillState(config);
-    // Reuse the probe above for the MCP restart comparison: one OS call per
-    // request, not two.
-    const mcp = await buildMcpState(config, { dshWebStartedAt: dsh.startedAt });
+    const mcp = await buildMcpState(config, { dshWebStartedAt });
     // Plugins live in the profile manifests, so this is a directory read, not a
     // process probe. The boot time it is handed is only used for the "a plugin
     // changed since dsh web started" comparison.
-    const plugins = await buildPluginState(config, { dshWebStartedAt: dsh.startedAt });
-    // Which DSH is installed. Deliberately *not* handed `release: true`: this
-    // runs on every poll of every open panel, and the registry is only consulted
-    // when the user asks (GET /api/dsh/release). The cheap local read is cached
-    // for a minute, so the first poll pays for `dsh --version` and the rest are
-    // free. `fresh` still forces it, because the refresh button is the user
-    // replacing a cached answer with a measured one.
-    const dshVersion = await buildVersionState(config, {
-      fresh,
-      dshWebStartedAt: dsh.startedAt,
-    });
-    // The panel's own version. Like the DSH card, the network half is only
-    // reached when the user asks: `release` is left false here.
+    const plugins = await buildPluginState(config, { dshWebStartedAt });
+    // The panel's own version. The network half is only reached when the user
+    // asks: `release` is left false here.
     const panelUpdate = await buildPanelUpdateState(config, {
       current: version,
       fresh,
       packaged: options.packaged === true,
     });
-    const start = startCommandInfo();
     const restartPending = Boolean(
-      mcp.patchMtime && dsh.startedAt && new Date(mcp.patchMtime) > new Date(dsh.startedAt),
+      mcp.patchMtime && dshWebStartedAt && new Date(mcp.patchMtime) > new Date(dshWebStartedAt),
     );
     return {
       version,
@@ -191,12 +131,8 @@ export function createPanelServer(config, options) {
       mcpMeta: {
         patchMtime: mcp.patchMtime,
         disabledMtime: mcp.disabledMtime,
-        dshWebStartedAt: dsh.startedAt,
+        dshWebStartedAt,
         restartPending,
-        // Only hosts that wired a `restartHook` can satisfy a click on the
-        // banner's "Restart dsh web now" button; CLI mode deliberately does
-        // not, so the UI shows the manual instruction instead.
-        canRestart: typeof options.restartHook === 'function',
         files: mcp.files,
       },
       plugins: plugins.plugins,
@@ -211,24 +147,10 @@ export function createPanelServer(config, options) {
         // that 501s. Resolved once here, not per row.
         canRemove: resolveDshLauncher() !== null,
       },
-      // Which DSH is installed and whether a newer one is published. Every field
-      // is an observation: `installedError` says why the version could not be
-      // read, and `checkError` says why the registry could not be reached, so a
-      // broken machine is diagnosable from the UI alone.
-      dshVersion,
-      // Which panel is running, and whether a newer release exists. Same shape
-      // of report as `dshVersion`: every field is an observation, and the
-      // failure of a check is a value here rather than an exception.
+      // Which panel is running, and whether a newer release exists. Every field
+      // is an observation, and the failure of a check is a value here rather
+      // than an exception.
       panelUpdate,
-      dsh: {
-        ...dsh,
-        canStart: canControlDsh,
-        canStop: canControlDsh,
-        canRestart: canControlDsh,
-        startCommand: start.command,
-        startCommandSource: start.source,
-        lastStartError: getLastStartError(),
-      },
       paths: {
         home: config.home,
         dshHome: config.dshHome,
@@ -326,43 +248,8 @@ export function createPanelServer(config, options) {
         return sendJson(res, 200, { ok: true, restartRequired: true, ...result });
       }
 
-      // Which versions of DSH are published. Separate from /api/state because it
-      // is the only call in the app that crosses the network on the user's
-      // behalf: keeping it off the poll path is what stops a slow or unreachable
-      // registry from making the whole panel feel broken. `?fresh=1` is the
-      // "check again" button, and is also what a cached failure needs to clear.
-      if (route === 'GET /api/dsh/release') {
-        const fresh = url.searchParams.get('fresh') === '1';
-        const dsh = readDshStatus({ fresh });
-        const dshVersion = await buildVersionState(config, {
-          fresh,
-          release: true,
-          dshWebStartedAt: dsh.startedAt,
-        });
-        return sendJson(res, 200, { ok: true, dshVersion });
-      }
-
-      // Install a published DSH version. The body carries a channel name or an
-      // exact version and nothing else: `updateDsh` re-checks it against the
-      // registry's own list before a command line is built, so this localhost
-      // route cannot be used to run an arbitrary npm install. Same reasoning as
-      // /api/plugins/remove.
-      if (route === 'POST /api/dsh/update') {
-        const { version } = await readBody(req);
-        const dsh = readDshStatus({ fresh: true });
-        const result = await updateDsh(config, String(version ?? ''), {
-          dshWebStartedAt: dsh.startedAt,
-        });
-        const dshVersion = await buildVersionState(config, {
-          fresh: true,
-          release: false,
-          dshWebStartedAt: dsh.startedAt,
-        });
-        return sendJson(res, 200, { ok: true, ...result, dshVersion });
-      }
-
-      // Which panel release exists. Off the `/api/state` poll path for the same
-      // reason as the DSH check: the poll must not wait on the network.
+      // Which panel release exists. Off the `/api/state` poll path because the
+      // poll must not wait on the network.
       if (route === 'GET /api/panel/release') {
         const fresh = url.searchParams.get('fresh') === '1';
         const panelUpdate = await buildPanelUpdateState(config, {
@@ -424,43 +311,6 @@ export function createPanelServer(config, options) {
         if (!options.openPath) throw new HttpError(501, 'this host cannot open paths');
         const err = await options.openPath(resolved);
         return sendJson(res, 200, { ok: true, path: resolved, error: err ? String(err) : null });
-      }
-
-      // The "restart dsh web now" button lives in the MCP tab's restart banner.
-      // It only does anything in hosts that wired a `restartHook` -- a host
-      // that cannot manage processes degrades to a clear 501 instead of
-      // silently doing nothing.
-      if (route === 'POST /api/restart') {
-        if (!options.restartHook) throw new HttpError(501, 'this host cannot restart dsh web');
-        const result = await options.restartHook();
-        return sendJson(res, 200, { ok: true, ...result });
-      }
-
-      // DSH service control, used by the DSH tab. A host without `dshControl`
-      // (a plain browser-launched panel that was not asked to manage anything)
-      // answers 501 for all three, so the UI can say "this host cannot" rather
-      // than offering a button that fails.
-      if (route === 'POST /api/dsh/start') {
-        if (!dshControl) throw new HttpError(501, 'this host cannot start dsh web');
-        const result = await dshControl.start();
-        return sendJson(res, 200, { ok: true, ...result });
-      }
-      if (route === 'POST /api/dsh/stop') {
-        if (!dshControl) throw new HttpError(501, 'this host cannot stop dsh web');
-        const result = await dshControl.stop();
-        return sendJson(res, 200, { ok: true, ...result });
-      }
-      if (route === 'POST /api/dsh/restart') {
-        if (!dshControl) throw new HttpError(501, 'this host cannot restart dsh web');
-        const result = await dshControl.restart();
-        return sendJson(res, 200, { ok: true, ...result });
-      }
-      // The status probe on its own, for a caller that wants a cheap answer
-      // without the skill/MCP filesystem walk.
-      if (route === 'GET /api/dsh/status') {
-        const fresh = url.searchParams.get('fresh') === '1';
-        const status = readDshStatus({ fresh });
-        return sendJson(res, 200, { ok: true, ...status, canControl: canControlDsh });
       }
 
       if (req.method === 'GET') return serveStatic(res, url.pathname);

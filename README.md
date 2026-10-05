@@ -43,7 +43,7 @@ stops reminding you why:
 | | Where the state lives | When a change takes effect |
 |---|---|---|
 | **Skills** | a link in `$DSH_HOME/skills` pointing at a pool directory | ⚡ **immediately, no restart** |
-| **MCP** | a block in `$DSH_HOME/cordis.patch.yml` | 🔁 **only after restarting `dsh web`** |
+| **MCP** | a block in `$DSH_HOME/cordis.patch.yml` | 🔁 **only after restarting DSH** |
 
 **Why skills are live:** DSH's `dsh-skill-filesystem` provider watches the skill
 root. Adding or removing an entry there rebuilds the catalog, and the change is
@@ -52,13 +52,12 @@ see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the experiment.
 
 **Why MCP is not:** MCP servers are assembled once at boot. There is no hot
 reload, so the panel instead *tells you* when a restart is genuinely pending — it
-compares the patch file's mtime against the running `dsh web` process start time.
+compares the patch file's mtime against the running DSH service start time.
 If you have not changed anything, it stays quiet.
 
-The **DSH** tab is where that restart happens: it reports the running service
-(pid, uptime, command line) and can start, stop or restart it. It is the only
-place in the app that manages a process rather than a file, so it is also the
-only place that warns you before acting.
+The panel does **not** manage that restart. DSH's own desktop app owns its
+lifecycle, so the MCP banner tells you a restart is pending and you quit and
+reopen DSH yourself.
 
 ---
 
@@ -185,7 +184,7 @@ not.
   DSH itself shows
 - Uninstall runs `dsh plugin --profile <name> remove <pkg>` — the command you
   would type by hand — so `pnpm-lock.yaml` stays in sync with the manifest. A
-  running `dsh web` keeps the plugin loaded until it restarts, and the tab says
+  running DSH keeps the plugin loaded until it restarts, and the tab says
   so rather than pretending the removal already took effect
 - Installing is deliberately **not** offered; that path is `dsh plugin add`
 
@@ -255,68 +254,18 @@ environment; browser mode additionally accepts `--port` and `--host`.
 | `DSH_PATCH_FILE` | `$DSH_HOME/cordis.patch.yml` | Enabled MCP blocks |
 | `DSH_DISABLED_FILE` | `$DSH_HOME/mcp-manager/disabled.yml` | Parked MCP blocks |
 | `DSH_PROFILES_DIR` | `$DSH_HOME/profiles` | DSH profiles — each one owns its plugins |
-| `DSH_PANEL_DSH_PACKAGE` | `@deepseek-ai/dsh` | npm package the version card tracks and installs |
 | `DSH_PANEL_REPO` | `YiShan-X/dsh-control-panel` | `owner/repo` the panel's own update check reads |
 | `DSH_PANEL_DOWNLOAD_DIR` | `~/Downloads` | Where an update installer is saved |
 | `CC_SWITCH_HOME` | `~/.cc-switch` | cc-switch home |
 | `DSH_PANEL_CC_SWITCH` | `1` | Set to `0` to ignore cc-switch entirely |
-| `DSH_WEB_CMD` | `dsh web` | Command the **DSH** tab's Start button runs |
-| `DSH_PANEL_NO_CONTROL` | `0` | Set to `1` to disable start/stop/restart of `dsh web` |
-| `DSH_PANEL_PROBE_WEB` | `1` | Set to `0` to stop probing for a running `dsh web` |
+| `DSH_WEB_CMD` | the `dsh` on PATH | `dsh` launcher used for plugin commands (set it when `dsh` is not on PATH) |
+| `DSH_PANEL_PROBE_WEB` | `1` | Set to `0` to stop probing for a running DSH service |
 | `DSH_PANEL_PORT` | `8791` | Browser-mode port (desktop mode picks a free one) |
 | `DSH_PANEL_HOST` | `127.0.0.1` | Browser-mode bind address |
 | `DSH_PANEL_POLL_MS` | `30000` | UI auto-refresh interval |
 
 When `DSH_SKILL_POOL` is not set, the pools are the cc-switch skill pool
 (`~/.cc-switch/skills`) followed by `$DSH_HOME/skill-pool`.
-
-### The DSH tab controls the service
-
-The **DSH** tab reports the running `dsh web` (pid, uptime, command line, probe
-cost) and can start, stop or restart it. Two things are worth knowing:
-
-- **Restarting `dsh web` disconnects anything using it**, including the DSH web
-  UI this panel may have been launched from, and the AI session attached to it.
-  The panel says so before it acts.
-- A **restart replays the command line the running process was started with**,
-  so `dsh web --port 3080` keeps its port. If that command no longer resolves on
-  this machine — a switched Node version manager is the usual cause — the panel
-  falls back to `DSH_WEB_CMD` and tells you, rather than failing silently.
-
-`DSH_PANEL_NO_CONTROL=1` turns the tab into a read-only reporter: the buttons
-render disabled with the reason instead of failing on click.
-
-### Which DSH is installed, and whether there is a newer one
-
-The same tab answers "what am I running, and is there an update?":
-
-- **The installed version** is read by running `dsh --version` — through the same
-  command the Start button uses, so `DSH_WEB_CMD` cannot make the panel report
-  the version of a *different* installation than the one it manages. If that
-  command cannot run, the panel falls back to the installed `package.json` and
-  says which of the two answered.
-- **The published versions** come from `npm view <package> --json`, run with your
-  own npm. That is deliberate: your `.npmrc`, your registry mirror and your
-  `HTTP_PROXY` / `HTTPS_PROXY` all apply, and the version the panel offers is by
-  construction the version an install would fetch. The card shows which registry
-  answered.
-- **The registry is only contacted when you ask** — once per page load, plus the
-  *Check for updates* button. `/api/state` never waits on the network, so an
-  unreachable registry cannot make the rest of the panel feel broken; the failure
-  is reported in the card instead.
-- **Every dist-tag is listed** (`latest`, `next`, `alpha`) with its version and
-  publish date, so you can move between channels in either direction. A channel
-  behind your installed version is labelled older rather than offered as an
-  update.
-- **Updating runs `npm install -g <package>@<version>`** and then *re-reads* the
-  version. npm exiting 0 is not treated as success: if the `dsh` on your `PATH`
-  still reports the old number — a second installation earlier on `PATH` is the
-  usual reason — the panel says so instead of claiming it worked.
-- **A running `dsh web` keeps the code it booted with**, so the card offers a
-  restart once an install has landed after the service started.
-
-Installs are global and the builds are unsigned, so the panel asks for
-confirmation naming both versions before it touches anything.
 
 ### Keeping the panel itself up to date
 
@@ -396,7 +345,7 @@ src/
     plugins.mjs      profile plugin inventory, uninstall via `dsh plugin`
     patch.mjs        the delimited-block editor
     ccswitch.mjs     optional read-only SQLite source
-    dsh.mjs          dsh web process probe, cache and lifecycle
+    dsh.mjs          DSH service probe (is a restart pending?)
     server.mjs       createPanelServer() -- the HTTP layer
   cli.mjs          browser mode
   desktop/main.mjs Electron main process
@@ -409,15 +358,14 @@ scripts/           icon generator, smoke test, screenshot generator
 ## FAQ
 
 **I toggled an MCP server and nothing happened.**
-Working as intended — restart `dsh web`. The banner at the top of the MCP tab
-tells you whether a restart is pending, and the DSH tab's **Restart** button does
-it (with the warning that it interrupts the current AI session).
+Working as intended — restart DSH. The banner at the top of the MCP tab tells you
+whether a restart is pending; quit and reopen DSH to apply it.
 
-**The DSH tab says "not running" but `dsh web` is clearly up.**
-The probe looks for a `node.exe` process whose command line mentions both `dsh`
-and `web`. A service started under a different executable name or wrapper will
-not be found; set `DSH_WEB_CMD` so the Start button can still launch it. If the
-status dot is grey with "not probed", probing was switched off with
+**The MCP banner never appears, even though I changed something.**
+The panel can only compare against a service it recognises: the probe looks for a
+process whose command line mentions both `dsh` and `web`. If DSH runs under a
+different executable name or wrapper, there is no boot time to compare with, and
+the banner stays quiet. Probing can also be switched off entirely with
 `DSH_PANEL_PROBE_WEB=0`.
 
 **The page is blank.**

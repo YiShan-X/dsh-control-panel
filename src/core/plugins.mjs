@@ -124,10 +124,12 @@ export function assertSafePackageName(name) {
 /**
  * Resolve the `dsh` launcher used for plugin commands.
  *
- * `DSH_WEB_CMD` is the documented escape hatch for a DSH that is not on PATH,
- * so it wins *when its first token is a dsh executable*; a `DSH_WEB_CMD` that
- * points at something else (a wrapper script, `node cli.mjs`) is ignored rather
- * than guessed at, and the plain PATH lookup decides.
+ * `DSH_WEB_CMD` keeps its name even though the panel no longer starts a `dsh
+ * web`: it is the only documented way to point the panel at a DSH that is not
+ * on PATH, and renaming it would silently break every existing setup. It wins
+ * *when its first token is a dsh executable*; a `DSH_WEB_CMD` that points at
+ * something else (a wrapper script, `node cli.mjs`) is ignored rather than
+ * guessed at, and the plain PATH lookup decides.
  *
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{path: string, source: 'DSH_WEB_CMD'|'PATH'}|null}
@@ -146,8 +148,8 @@ export function resolveDshLauncher(env = process.env) {
  * The spawn spec for one plugin command.
  *
  * `dsh` is a `.cmd` shim on Windows, which libuv cannot start; the shim's own
- * `node` + script is preferred over `cmd /c` for the same reason the start path
- * prefers it (a `cmd /c` child gets a visible console window).
+ * `node` + script is preferred over `cmd /c` because a `cmd /c` child gets a
+ * visible console window that stays open for as long as pnpm runs.
  *
  * @param {string} launcher Resolved path to the dsh launcher.
  * @param {string} profile
