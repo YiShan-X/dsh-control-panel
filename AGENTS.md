@@ -1,249 +1,98 @@
+<!-- condensed from AGENTS.md @ 2026-10-06 · kept 33/48 items · evidence: git @ 011604a (22 commits / 22 days, semi-empirical) -->
+
 # AGENTS.md — working notes for agents
 
-Operational knowledge for an agent (or a human in a hurry) changing this repo.
-`CONTRIBUTING.md` covers what a good change looks like; this file covers the
-things that have already cost a full session to learn once.
-
-Read this before your first edit, and update it when you learn something that
-would have saved you time.
-
----
+Operational knowledge for changing this repo (`CONTRIBUTING.md` covers what a good change looks like). Read it
+before your first edit, and update it when you learn something that would have saved you time.
 
 ## 1. Layout and commands
 
-Zero-dependency core, two front-ends. Nothing in `src/core/` may import from
-`node_modules`: CI's fast path runs `npm ci --ignore-scripts` and `npm test`, so
-a stray dependency there would break the job that is supposed to need nothing
-but Node.
+Zero-dependency core, two front-ends. **Nothing in `src/core/` may import from `node_modules`**: CI's fast path runs
+`npm ci --ignore-scripts` and `npm test`, so a stray dependency breaks the job meant to need only Node.
 
 ```bash
-npm test          # node --test, ~7 s, no dependencies needed
+npm test          # node --test, ~7 s, no dependencies needed — the gate that matters
 npm run smoke     # real Electron window, then exit
 npm run icons     # install build/ icons from assets/ exports
 npm run pack      # electron-builder --dir (slow; needs network the first time)
 node src/cli.mjs  # browser mode on 127.0.0.1:8791
 ```
 
-`npm test` is the gate that matters. It runs in ~7 s and catches almost
-everything — see §5 before you trust it.
-
----
+`npm test` catches almost everything — see §5 before you trust it.
 
 ## 2. Invariants that are not negotiable
 
 Break one of these and the change is wrong, however good the intent:
 
-- **A real directory in the skill root is never deleted.** `disableSkill` refuses
-  anything that is not a link (HTTP 409). There is a test for it.
+- **A real directory in the skill root is never deleted.** `disableSkill` refuses anything that is not a link (HTTP 409); there is a test for it.
 - **cc-switch's database is opened `readOnly: true`** and is never written.
-- **A parked MCP block is restored verbatim**, byte for byte, including
-  hand-written comments. `test/server.test.mjs` asserts this.
-- **The patch file always stays a valid YAML array** (`ensureValidArray`), never
-  comments-only, because the loader throws on a null parse.
-- **Never claim success on a non-event.** A mutating function reports what it
-  *observed* after acting — `removePlugin` re-reads the profile manifest before
-  it says "uninstalled" — not what it intended.
-- **The panel must not carry credentials.** It reads them out of the user's DSH
-  and cc-switch config; it never stores its own.
+- **A parked MCP block is restored verbatim**, byte for byte, including hand-written comments (`test/server.test.mjs` asserts this).
+- **The patch file always stays a valid YAML array** (`ensureValidArray`), never comments-only, because the loader throws on a null parse.
+- **Never claim success on a non-event.** A mutating function reports what it *observed* after acting — `removePlugin` re-reads the profile manifest before it says "uninstalled" — not what it intended.
+- **The panel must not carry credentials.** It reads them out of the user's DSH and cc-switch config; it never stores its own.
 
----
+## 3. Windows and CI specifics that will bite you
 
-## 3. Windows specifics that will bite you
+Developed on Windows, CI runs Ubuntu/macOS/Windows; most bugs so far lived in that gap.
 
-This project is developed on Windows and CI runs Ubuntu/macOS/Windows. Most of
-the bugs so far have been in the gap between the three.
+**`.cmd` shims cannot be spawned.** `spawn('dsh')` fails with `ENOENT` (libuv cannot start a `.cmd` batch shim), and
+`where dsh` lists an **extensionless POSIX script first** (`C:\nvm4w\nodejs\dsh`) that Windows cannot run either —
+while `execFileSync('dsh')` succeeds anyway, because it goes through a shell. So:
 
-### `.cmd` shims cannot be spawned
+- Resolve to a real launchable file with `resolveExecutable()` (prefers `.exe` > `.com` > `.cmd` > `.bat`) before spawning anything.
+- Never wrap in `cmd /c` if you can avoid it: `cmd` stays hidden, but the console app it launches gets a **visible console window** for the process's whole life. `unwrapNpmShim()` runs `node bin.js` from npm's own shim instead.
+- Measure, don't assume: `Get-Process -Id <pid> | Select MainWindowHandle` (`0` = hidden, non-zero = a window the user will see).
 
-`spawn('dsh')` fails with `ENOENT` because `dsh` is a `dsh.cmd` batch shim and
-libuv cannot start one. Worse, `where dsh` lists an **extensionless POSIX
-script first** (`C:\nvm4w\nodejs\dsh`) that Windows cannot run either, and
-`execFileSync('dsh')` succeeds anyway because it goes through a shell.
+**A global CLI is a symlink on POSIX and a `.cmd` on Windows** (`resolveDshLauncher()`, `src/core/plugins.mjs`).
+Windows writes a readable `.cmd` shim naming the script, which `unwrapNpmShim()` turns into `node <script>`; POSIX
+writes a **symlink** (`.../bin/dsh -> ../lib/node_modules/@deepseek-ai/dsh/lib/bin.js`) that only `fs.realpathSync`
+resolves. Code handling only the `.cmd` shape silently finds nothing on Linux and macOS — and a test that builds a
+*standalone shell script* hides that, because the platform installs a symlink. Build a symlink.
 
-Rules:
+**Packaged vs. run-from-source.** `build/` is **not** inside the asar; `files` decides what goes in, so anything else
+needed at package time must be listed in `extraResources`, or `nativeImage.createFromPath(.../build/icon.png)`
+silently returns an *empty* image (that is how the tray icon shipped invisible until 1.2.0) — a packaged-only path
+failure looks exactly like "no icon configured".
 
-- Resolve to a real launchable file with `resolveExecutable()` (prefers
-  `.exe` > `.com` > `.cmd` > `.bat`) before spawning anything.
-- Never wrap in `cmd /c` if you can avoid it: `cmd` stays hidden, but the console
-  app it launches gets a **visible console window** that persists for the
-  process's whole life. `unwrapNpmShim()` reads npm's own shim and runs
-  `node bin.js` directly instead.
-- Measure, don't assume: `Get-Process -Id <pid> | Select MainWindowHandle`.
-  `0` = hidden, non-zero = a window the user will see.
+**Tests must be host-independent.** CI runners have **no `dsh` installed**, so a test that asserts a real command
+resolves, or that calls a Windows-only parser unguarded, passes locally and fails on every runner. Either put a
+stand-in on `PATH` (`withFakeDshOnPath()` in `test/dsh.test.mjs`) + `clearExecutableCache()`, or
+`{ skip: process.platform !== 'win32' }`. Strongest form: a real per-platform executable named by `DSH_WEB_CMD` that
+writes a marker file — proof the program *executed*, which a mocked `spawn` never gives (`test/plugins.test.mjs`, for
+`dsh plugin remove`).
 
-### A global CLI is a symlink on POSIX and a `.cmd` on Windows
+**Screenshots need `--disable-gpu` in an agent session**: `npm run screenshot` (any `DSH_PANEL_SMOKE_CAPTURE` run) fails
+with `capture: UnknownVizError` and writes **no file**, while
+`node_modules/electron/dist/electron.exe --disable-gpu .` works. It surfaces as `SMOKE fail: 1 renderer error(s)`; the
+`capture:` line is the one naming the cause.
 
-The asymmetry bites wherever you need to find *the package behind* a command.
-It was learned while resolving the `dsh` launcher for the DSH version card
-(`src/core/dshVersion.mjs`, removed with the DSH tab), and it still applies to
-`resolveDshLauncher()` in `src/core/plugins.mjs`. npm installs the two platforms
-differently:
+**`ELECTRON_RUN_AS_NODE=1` must be cleared before running Electron.** A DSH agent session exports it, and with it set
+the binary runs as plain Node: no window, and a CLI error naming a Chromium switch
+(`electron.exe: bad option: --disable-gpu`). `npm run smoke` / `npm run screenshot` inherit it; clear it for the child
+(`Remove-Item env:ELECTRON_RUN_AS_NODE`). It is a property of the session, not of the app.
 
-- **Windows** writes a `.cmd` shim whose text names the script — readable, and
-  `unwrapNpmShim()` turns it into `node <script>`.
-- **POSIX** writes a **symlink** from the bin directory into the package
-  (`.../bin/dsh -> ../lib/node_modules/@deepseek-ai/dsh/lib/bin.js`). There is no
-  shim text to read; the link has to be resolved with `fs.realpathSync` first.
+**The panel's own update reads `latest*.yml`, not the GitHub API** (`src/core/panelUpdate.mjs`): the API
+(`api.github.com/repos/.../releases/latest`) is rate-limited per IP — this repo's IP got `403 API rate limit exceeded` —
+and lacks the per-artifact `sha512`/`size` that make a verified download of an OS-executed file possible. The feeds
+`latest.yml`, `latest-mac.yml`, `latest-linux.yml` (from `.github/workflows/release.yml`) come through
+`https://github.com/<repo>/releases/latest/download/<name>`, which redirects to `release-assets.githubusercontent.com`,
+so an allow-list must include `*.githubusercontent.com`, not just `github.com`.
 
-Code that only handles the `.cmd` shape works on Windows and silently finds
-nothing on Linux and macOS. A test that builds a *standalone shell script* as the
-POSIX stand-in hides this completely, because a standalone script is not what the
-platform actually installs — build a symlink instead.
+- **The architecture token is not `process.arch`**: an x64 AppImage is `x86_64`, an x64 deb `amd64`; only Windows and macOS use `x64`. This shipped broken in 1.3.0 (the Linux updater offered nothing); `archTokens` owns the mapping, and `test/panelUpdate.test.mjs` feeds it the verbatim `latest-linux.yml` of 1.3.0.
+- `pickAsset` encodes what a person would pick: `-setup.exe` over the portable build (running the portable opens a *second* copy), `.dmg` over the electron-updater `.zip`, `.AppImage` over `.deb`. The Windows portable carries **no** arch token, so it is matched without one and ordered below the installer.
 
-### Packaged vs. run-from-source
-
-`build/` is **not** inside the asar. electron-builder's `files` decides what
-goes in; anything else at package time must be listed in `extraResources`, or
-`nativeImage.createFromPath(.../build/icon.png)` silently returns an *empty*
-image (that is how the tray icon shipped invisible in every release until
-1.2.0). A packaged-only path failure looks exactly like "no icon configured".
-
-### Testing conventions must be host-independent
-
-CI runners have **no `dsh` installed**. Tests that assert a real command
-resolves, or that call a Windows-only parser unguarded, pass locally and fail on
-every runner. Either:
-
-- put a stand-in on `PATH` (`withFakeDshOnPath()` in `test/dsh.test.mjs`) and
-  `clearExecutableCache()`, or
-- `{ skip: process.platform !== 'win32' }` and keep the Windows-only case there.
-
-The strongest form used here: build a real per-platform executable, point
-`DSH_WEB_CMD` at it, run the operation for real, and have the stand-in write a
-marker file — that proves the program *executed*, which a mocked `spawn` never
-can. `test/plugins.test.mjs` does exactly this for `dsh plugin remove`.
-
-### Screenshots need `--disable-gpu` in an agent session
-
-`npm run screenshot` (and any `DSH_PANEL_SMOKE_CAPTURE` run) fails with
-`capture: UnknownVizError` and writes **no file** when Electron is launched from
-a non-interactive session, because there is no GPU compositor to capture from:
-
-```bash
-node_modules/electron/dist/electron.exe --disable-gpu .   # capture works
-```
-
-Note that the failure is a *renderer error*, so smoke reports
-`SMOKE fail: 1 renderer error(s)` rather than anything mentioning the GPU — the
-message that points at the cause is the `capture:` line above it.
-
-### `ELECTRON_RUN_AS_NODE=1` must be cleared before running Electron
-
-A DSH agent session exports `ELECTRON_RUN_AS_NODE=1`, and with it set the
-Electron binary runs as plain Node: the window never appears and the launch dies
-with a CLI error that names a Chromium switch, e.g.
-
-```
-electron.exe: bad option: --disable-gpu
-electron.exe: bad option: --user-data-dir=...
-```
-
-`npm run smoke` and `npm run screenshot` inherit the variable and fail the same
-way. Clear it for the child process (`Remove-Item env:ELECTRON_RUN_AS_NODE`) —
-this is a property of the invoking session, not of the app.
-
-### Reading the outside world: use the user's own tool
-
-`src/core/dshVersion.mjs` (removed with the DSH tab) used to read the npm
-registry, and the reasoning is worth keeping for anything that reaches the
-network on the user's behalf: it may not import `node_modules`, and shelling out
-to the user's own `npm view` was chosen over a hand-rolled HTTPS client because
-Node's global `fetch` **ignores `HTTP_PROXY`/`HTTPS_PROXY`**, and doing it
-properly would mean implementing a CONNECT tunnel over `node:tls` that then has
-to agree with whatever registry npm is actually configured against. Two lessons
-worth keeping:
-
-- On this project's own machine `.npmrc` points at `registry.npmmirror.com`, not
-  npmjs.org — a check that hard-coded the npmjs URL would have disagreed with
-  the install it was predicting.
-- `npm view <pkg> --json` reports where the **publisher** built the tarball in
-  `_resolved` (`/home/runner/work/...` — useless). The field that names the
-  registry that answered *you* is `dist.tarball`.
-
-The one surviving network call is `src/core/panelUpdate.mjs`, which goes through
-`src/core/httpGet.mjs` for exactly the proxy reason above.
-
-### The panel's own update reads `latest*.yml`, not the GitHub API
-
-`src/core/panelUpdate.mjs` deliberately reads electron-builder's own feed asset
-instead of `api.github.com/repos/.../releases/latest`:
-
-- **The API is rate-limited per IP** — 60/hour unauthenticated, and this repo's
-  own IP was answered `403 API rate limit exceeded` during the session that
-  added the feature. A version check that fails on a busy network is worse than
-  no check.
-- **The feed carries `sha512` and `size` per artifact.** That is what makes a
-  verified download possible, and a verified download is the point: the file
-  ends up being executed by the OS. The API does not expose this for older
-  releases.
-- The three platform feeds are `latest.yml`, `latest-mac.yml` and
-  `latest-linux.yml`, all published by `.github/workflows/release.yml`. They are
-  fetched through `https://github.com/<repo>/releases/latest/download/<name>`,
-  which redirects to `release-assets.githubusercontent.com` — so a redirect
-  allow-list must include `*.githubusercontent.com`, not just `github.com`.
-
-Artifact preference (`pickAsset`) encodes what a person would pick by hand: the
-NSIS `-setup.exe` over the portable build (running the portable opens a *second*
-copy), the `.dmg` over the `.zip` that exists for electron-updater, `.AppImage`
-over `.deb`.
-
-**The architecture token is not `process.arch`.** electron-builder names an x64
-AppImage `x86_64` and an x64 deb `amd64`; only Windows and macOS use `x64`. This
-shipped broken in 1.3.0 — the Linux updater found no artifact and offered
-nothing — and the only thing that could have caught it was reading the asset list
-of a real release (`archTokens` in `panelUpdate.mjs` now owns the mapping, and
-`test/panelUpdate.test.mjs` uses the verbatim `latest-linux.yml` of 1.3.0 as a
-fixture). The Windows portable build additionally carries **no** arch token at
-all, so it is matched without one — and ordered below the installer for that
-reason and because running it would open a second copy.
-
-### Node's `fetch` ignores the proxy environment
-
-This is why `src/core/httpGet.mjs` exists rather than a few lines of `fetch`.
-`HTTP_PROXY`/`HTTPS_PROXY` have to be honoured for this project's users, and
-undici reads none of them. The client implements the subset that is needed:
-absolute-form requests for plain HTTP through a proxy, `CONNECT` plus an inner
-TLS handshake for HTTPS, `NO_PROXY` matching, and proxy basic auth.
-
-Two rules about redirects, and the split is deliberate:
-
-- **HTTPS → HTTP is refused inside the client**, always. Anyone who can answer
-  for the original host could otherwise strip TLS from a download.
-- **"Stay on GitHub" is the caller's policy**, passed as `onRedirect`. Baking it
-  into the client broke every non-GitHub fetch — including this file's own local
-  test servers. `assertFollowable` is exported for the update path to use.
-
-### Test against local servers, not the network
-
-`test/httpGet.test.mjs` starts real HTTP servers, a real forward proxy and a real
-TLS server on `127.0.0.1` and drives the client through them. That is the only
-way the CONNECT + TLS path gets exercised at all: a test that needed a real proxy
-would be skipped exactly when it matters. The TLS certificate is generated at run
-time with `openssl` and the test **skips honestly** when openssl is absent, rather
-than committing a private key to a public repository.
-
-`test/panelUpdate.test.mjs` feeds the parser the verbatim `latest.yml` of release
-1.2.0 rather than a hand-written approximation of it.
-
----
+**Node's `fetch` ignores `HTTP_PROXY`/`HTTPS_PROXY`** — why `src/core/httpGet.mjs` exists. **HTTPS → HTTP is refused inside
+the client**, always: whoever answers for the original host could otherwise strip TLS from a download. Redirect policy
+beyond that ("stay on GitHub") belongs to the caller — `onRedirect` + `assertFollowable`, never baked into the client;
+`test/httpGet.test.mjs` asserts both rules on real `127.0.0.1` servers and needs `openssl` for its TLS case.
 
 ## 4. Conventions
 
-- **One decision per commit.** The message says what was observed and why the
-  alternative was rejected, not just what changed.
-- **i18n: every `t('key')` must exist in BOTH `en` and `zh-CN`.** `t()` falls
-  back to the key name, so a missing key renders as `puNeverChecked` and
-  nothing fails. `test/ui.test.mjs` now enforces this — run it after touching
-  `public/index.html`.
-- **Delete dead code with the feature.** There is no Models tab; if you find
-  routes, UI or changelog entries for one, they are leftovers and are wrong.
-- **Comments explain why, especially the rejected alternative.** Several
-  non-obvious blocks in `src/core/dsh.mjs` exist only because a simpler version
-  was tried and failed; the comment is what stops the next agent from undoing it.
-- **`public/index.html` is one file with no build step** (inline CSS/JS, both
-  languages). Keep it that way.
-
----
+- **One decision per commit.** The message says what was observed and why the alternative was rejected, not just what changed.
+- **i18n: every `t('key')` must exist in BOTH `en` and `zh-CN`.** `t()` falls back to the key name, so a missing key renders as `puNeverChecked` and nothing fails. `test/ui.test.mjs` enforces it — run it after touching `public/index.html`.
+- **Delete dead code with the feature.** There is no Models tab; routes, UI or changelog entries for one are leftovers and are wrong.
+- **Comments explain why, especially the rejected alternative.** Several non-obvious blocks in `src/core/dsh.mjs` exist only because a simpler version was tried and failed; the comment is what stops the next agent from undoing it.
+- **`public/index.html` is one file with no build step** (inline CSS/JS, both languages). Keep it that way.
 
 ## 5. The pre-release checklist
 
@@ -258,60 +107,29 @@ node node_modules/electron-builder/out/cli/cli.js --dir   # optional, slow
 
 Then, before tagging:
 
-1. **Bump `package.json` version AND promote the CHANGELOG `Unreleased` section
-   to that version with today's date.** The release body is generated from the
-   CHANGELOG, so stale entries become public false claims.
-2. **Check the CHANGELOG entries are real.** Grep for the routes and files they
-   name; a leftover section from an unlanded workstream is not hypothetical.
-3. **`git status` must be clean apart from intended files.** `.codegraph/` and
-   `release/` are ignored; never commit either.
-4. **Push `main`, then push the tag** (the tag triggers the Release workflow).
-5. **Watch both workflows** — `gh run list`. CI on `main` and Release on the tag
-   run in parallel; the Release job's `npm test` step is the same gate, so a red
-   CI means a red Release and no published artifacts.
-6. **Confirm the release actually exists** — a green tag push is not enough:
-   `gh release list`. A failed build job leaves you with a tag and no release,
-   in which case deleting and re-pushing the tag is clean (nothing was published).
-
-If the tag already triggered a failed run, check whether a release was created
-*before* deciding how to recover: `gh release view <tag>`. No release means
-`git push origin :refs/tags/<tag>` and re-tagging is safe.
-
----
+1. **Bump `package.json` version AND promote the CHANGELOG `Unreleased` section to that version with today's date.** The release body is generated from the CHANGELOG, so stale entries become public false claims — grep for the routes and files the entries name; a leftover section from an unlanded workstream is not hypothetical.
+2. **`git status` must be clean apart from intended files.** `.codegraph/` and `release/` are ignored; never commit either.
+3. **Push `main`, then push the tag** (the tag triggers the Release workflow).
+4. **Watch both workflows** (`gh run list`): CI on `main` and Release on the tag run in parallel, and the Release job's `npm test` step is the same gate — a red CI means a red Release and no published artifacts.
+5. **Confirm the release exists** (`gh release list`) — a green tag push is not enough. If the tag triggered a failed run, check `gh release view <tag>` before recovering: no release means `git push origin :refs/tags/<tag>` and re-tagging is safe.
 
 ## 6. Network-dependent steps
 
-`electron-builder --dir` downloads an Electron build the first time and writes a
-~250 MB executable; allow a few minutes and run it as a background job rather
-than blocking on it. It never publishes by itself — the tag does that.
+`electron-builder --dir` downloads an Electron build the first time and writes a ~250 MB executable: run it as a
+background job. It never publishes by itself — the tag does that.
 
-### `npm install` can leave Electron with no binary, and report success anyway
+**`npm install` can leave Electron with no binary and report success anyway.** The `electron` package ships no executable:
+its postinstall fetches `electron-v<version>-<platform>-<arch>.zip` from **GitHub releases** into
+`node_modules/electron/dist`, writing the relative path into `path.txt`. When that fetch fails, `npm install` still exits
+0 — it installed the *package* — and the damage shows up later as `npm run smoke` / `npm run screenshot` failing with an
+unusable binary, while `require('electron/package.json').version` reports the new version happily. Check
+`Test-Path node_modules/electron/dist/electron.exe` (and a non-empty `path.txt`), not the version number.
 
-The `electron` package ships no executable: its postinstall runs `install.js`,
-which fetches `electron-v<version>-<platform>-<arch>.zip` from **GitHub
-releases** (`release-assets.githubusercontent.com`) and unpacks it into
-`node_modules/electron/dist`, writing the relative path into `path.txt`. When
-that fetch cannot complete, `npm install` still exits 0 for the tree — it has
-installed the *package* — and the damage only appears later as
-`npm run smoke` / `npm run screenshot` failing with an unusable binary, while
-`require('electron/package.json').version` reports the new version perfectly
-happily. Check `Test-Path node_modules/electron/dist/electron.exe` (and a
-non-empty `path.txt`) after any install, not the version number.
-
-Two dead ends, both measured on this machine:
-
-- **The npmmirror binary mirror** (`ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`)
-  configures cleanly and answers `200` to a HEAD request, but the actual zip
-  transfer stalled at 0 bytes for minutes. `registry.npmmirror.com` serving the
-  *npm* metadata is not evidence that it will serve the *binary*.
-- **`HTTP_PROXY` / `HTTPS_PROXY` do not reach the installer.** With both set,
-  `node node_modules/electron/install.js` opened a **direct** connection to
-  GitHub anyway (`Get-NetTCPConnection -OwningProcess <pid>` showed remote 443 at
-  a GitHub CDN address and nothing on the proxy port) and hung. `@electron/get`
-  resolves its proxy through `global-agent`, which never sees those variables
-  here.
-
-What works, and is worth doing first because it is one command:
+Two dead ends, both measured here: the npmmirror **binary** mirror
+(`ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`) answers `200` to a HEAD request while the zip
+transfer stalled at 0 bytes; and `HTTP_PROXY`/`HTTPS_PROXY` **do not reach the installer**
+(`node node_modules/electron/install.js` opened a direct GitHub connection — `Get-NetTCPConnection -OwningProcess <pid>`
+— and hung, because `@electron/get` gets its proxy from `global-agent`, which never sees them).
 
 ```bash
 curl.exe -x <proxy-url> -L -o "$TEMP/electron-v<ver>-win32-x64.zip" \
@@ -320,95 +138,38 @@ curl.exe -x <proxy-url> -L -o "$TEMP/electron-v<ver>-win32-x64.zip" \
 # and:  Set-Content node_modules/electron/path.txt -Value "electron.exe" -NoNewline
 ```
 
-`path.txt` is a plain relative path *inside* `dist` (`electron.exe` on Windows,
-`electron` on Linux, `Electron.app/Contents/MacOS/Electron` on macOS) — that is
-exactly what `scripts/electron-binary.mjs` hands to `spawn`, so a hand-extracted
-`dist` is enough for `npm run smoke`. The archive is ~150 MB and came down in
-~18 s through the proxy.
+`path.txt` is a plain relative path *inside* `dist` (`electron.exe` on Windows, `electron` on Linux,
+`Electron.app/Contents/MacOS/Electron` on macOS) — exactly what `scripts/electron-binary.mjs` hands to `spawn`, so a
+hand-extracted `dist` is enough for `npm run smoke`.
 
-**Do not pipe a long-lived Electron child through `Select-Object -Last N`.** A
-`npm run smoke 2>&1 | Select-Object -Last 12` invocation sat for 3 minutes with
-no output and neither the script's own 60 s timeout nor a process exit — while
-the identical run redirecting to a file finished in 2 s with a real verdict:
+**Do not pipe a long-lived Electron child through `Select-Object -Last N`**: a
+`npm run smoke 2>&1 | Select-Object -Last 12` sat for 3 minutes with no output and no exit, while the same run
+redirected to a file finished in 2 s with a verdict. Read `smoke.out` for `SMOKE ok: window loaded`; the exit code
+alone is not the evidence:
 
 ```powershell
-Start-Process .\node_modules\electron\dist\electron.exe `
-  -ArgumentList '--disable-gpu',"--user-data-dir=$env:TEMP\smoke" -Wait -PassThru `
-  -RedirectStandardOutput "$env:TEMP\smoke.out" -RedirectStandardError "$env:TEMP\smoke.err"
+Start-Process .\node_modules\electron\dist\electron.exe -ArgumentList '--disable-gpu',"--user-data-dir=$env:TEMP\smoke" -Wait -PassThru -RedirectStandardOutput "$env:TEMP\smoke.out" -RedirectStandardError "$env:TEMP\smoke.err"
 ```
 
-Read `smoke.out` for `SMOKE ok: window loaded`; the exit code alone is not the
-evidence.
-
-If `git push` or that download fails with a connection or TLS error while the
-network is otherwise fine, an HTTP proxy may be required. Set it per repository
-so the choice stays out of the global git config and out of this repository
-(these are machine details and do not belong in a public file):
-
-```bash
-git config --local http.proxy  <proxy-url>     # local only, never --global
-git config --local https.proxy <proxy-url>
-$env:HTTP_PROXY='<proxy-url>'; $env:HTTPS_PROXY='<proxy-url>'   # for the builder
-```
-
-Check the failure before blaming the code: a proxy that is listening is not
-necessarily working, and `curl -x <proxy-url> -sS -o NUL -w "%{http_code}"
-https://github.com` distinguishes "the tunnel is down" (000 / TLS handshake
-error) from "this repository's remote is wrong" (GitHub answers).
-
----
+If `git push` or that download fails with a connection or TLS error while the network is otherwise fine, a proxy may be
+required — set it per repository (`git config --local http.proxy` / `https.proxy <proxy-url>`, never `--global`; these
+are machine details and do not belong in a public file) plus `HTTP_PROXY`/`HTTPS_PROXY` for the builder. `curl -x
+<proxy-url> -sS -o NUL -w "%{http_code}" https://github.com` then tells a dead tunnel (000 / TLS handshake error) from a
+wrong remote.
 
 ## 7. The panel no longer manages a process
 
-`dsh web` process control — start, stop, restart, the `dshControl` bundle, the
-`/api/dsh/*` routes and the DSH tab — was **removed** when the official DSH
-desktop app became the way people run DSH. The panel still *probes* for a running
-`dsh web` (`src/core/dsh.mjs`) because the MCP and plugin banners compare its
-boot time against the patch/manifest mtime, but it never kills or spawns
-anything, and it no longer installs a global `dsh` either
-(`src/core/dshVersion.mjs` is gone). Two consequences worth remembering:
+`dsh web` process control — start, stop, restart, the `dshControl` bundle, the `/api/dsh/*` routes and the DSH tab — was
+**removed** when the official DSH desktop app became the way people run DSH, and the global `dsh` install went with it
+(`src/core/dshVersion.mjs` is gone). The panel still *probes* for a running `dsh web` (`src/core/dsh.mjs`) because the MCP
+and plugin banners compare its boot time against the patch/manifest mtime, but it never kills or spawns anything.
 
-- The probe is the only OS call left, and it is cached for 15 s. A host that
-  wants no PowerShell round trip at all sets `DSH_PANEL_PROBE_WEB=0`; every
-  restart comparison then reads "no boot time", and the banners stay quiet.
-- If process control is ever wanted back, do not resurrect it half-way: the
-  reason it was awkward is that `dsh web` is usually the thing hosting the agent
-  session, so stopping it kills the turn that asked for the stop. Any revival
-  needs a detached restorer and a stand-in process, verified against the OS
-  process table rather than the panel's own report.
-
-Prefer reproducing a bug independently *before* the fix and re-running the same
-reproduction after: for the ENOENT bug that shaped `resolveExecutable`,
-`spawn('dsh')` failing and `spawn(resolved)` succeeding was the only real
-evidence.
-
----
+- The probe is the only OS call left and is cached for 15 s; `DSH_PANEL_PROBE_WEB=0` turns it off, every restart comparison then reads "no boot time" and the banners stay quiet. A banner can only fire when `isDshWeb` recognises the process (a command line containing both `dsh` and `web`), so the panel cannot yet tell "restarted" from "not found".
+- If process control is ever wanted back, do not resurrect it half-way: `dsh web` is usually the thing hosting the agent session, so stopping it kills the turn that asked for the stop. Any revival needs a detached restorer and a stand-in process, verified against the OS process table rather than the panel's own report.
 
 ## 8. Known open items
 
-- `POST /api/panel/update`: the **download path is verified end-to-end against
-  the real release** — 111,413,415 bytes of `dsh-control-panel-1.2.0-x64-setup.exe`
-  streamed through the proxy, byte count matching the feed's `size` and the
-  sha512 matching the feed's digest. What remains unverified is everything
-  *after* the file lands: `openPath` has never actually launched an installer,
-  and the "download and install" button only appears in a **packaged** app, so
-  that branch of the route has only been exercised by unit tests.
-- Only the panel's own update check runs once per page load now; it is cached and
-  never on the `/api/state` poll path, but nobody has measured it on a slow link.
-- `DSH_WEB_CMD` can only be set through the environment; there is no in-app
-  field, so a user whose `dsh` is not on PATH can read the hint but not act on
-  it. It now only names the launcher for `dsh plugin` commands (plugins.mjs).
-- Plugin uninstall (`src/core/plugins.mjs`) runs the *documented*
-  `dsh plugin --profile <n> remove <pkg>` — a pnpm forwarder that also reconciles
-  `dsh.profile.bundles` — and re-reads the manifest before claiming success.
-  Editing `package.json` directly was rejected: it desyncs `pnpm-lock.yaml`, and
-  the next `dsh plugin add` then fails on the mismatch. Tests cover the whole
-  path against a stand-in `dsh` on `PATH`; no test drives a real pnpm run, so the
-  real-CLI behaviour is unverified in CI.
-- The restart-pending banners can only fire when the probe recognises the running
-  service: it matches a process whose command line contains both `dsh` and `web`
-  (`isDshWeb`). A DSH desktop build that does not look like that will simply
-  never show the banner — the panel cannot yet tell "restarted" from "not found".
-- `DSH_SETTINGS_FILE` still exists in `config.mjs` with no consumer left.
-- The `llm-deepseek` / model-catalog code paths were removed with the Models tab;
-  if you find references to them, they are stale.
+- `POST /api/panel/update`: the **download path is verified end-to-end against the real release** — 111,413,415 bytes of `dsh-control-panel-1.2.0-x64-setup.exe`, byte count matching the feed's `size` and the sha512 matching its digest. Everything *after* the file lands is unverified: `openPath` has never launched an installer, and the "download and install" button only appears in a **packaged** app, so that branch has only unit-test coverage.
+- Plugin uninstall (`src/core/plugins.mjs`) runs the *documented* `dsh plugin --profile <n> remove <pkg>` — a pnpm forwarder that also reconciles `dsh.profile.bundles` — and re-reads the manifest before claiming success. Editing `package.json` directly was rejected: it desyncs `pnpm-lock.yaml`, and the next `dsh plugin add` then fails on the mismatch. No test drives a real pnpm run, so real-CLI behaviour is unverified in CI.
+- `DSH_WEB_CMD` can only be set through the environment (no in-app field), and now only names the launcher for `dsh plugin` commands.
+- `DSH_SETTINGS_FILE` still exists in `config.mjs` with no consumer left; the `llm-deepseek` / model-catalog code paths went with the Models tab, so references to them are stale.
