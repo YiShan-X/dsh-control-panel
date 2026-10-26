@@ -56,8 +56,8 @@
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^44.7.0",
-    "electron-builder": "^26.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "io.github.yishan-x.dsh-control-panel",
